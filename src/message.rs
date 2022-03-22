@@ -16,11 +16,53 @@ use protobuf::{Message, ProtobufError};
 use std::any::type_name;
 use std::fmt::Debug;
 use std::io::{Cursor, Read, Write};
-use steam_vent_proto::enums_clientserver::EMsg;
-use steam_vent_proto::steammessages_base::CMsgMulti;
-use steam_vent_proto::steammessages_clientserver::CMsgClientServersAvailable;
-use steam_vent_proto::steammessages_clientserver_login::{
-    CMsgClientLoggedOff, CMsgClientLogon, CMsgClientLogonResponse,
+use steam_vent_proto::{
+    enums_clientserver::EMsg,
+    steammessages_base::CMsgMulti,
+    steammessages_clientserver::{
+        CMsgClientServersAvailable,
+        CMsgClientGamesPlayed
+    },
+    steammessages_clientserver_friends::{
+        CMsgClientFriendMsg,
+        CMsgClientFriendMsgIncoming,
+        CMsgClientAddFriend,
+        CMsgClientAddFriendResponse,
+        CMsgClientRemoveFriend,
+        CMsgClientHideFriend,
+        CMsgClientFriendsList,
+        CMsgClientFriendsGroupsList,
+        CMsgClientPlayerNicknameList,
+        CMsgClientRequestFriendData,
+        CMsgClientChangeStatus,
+        CMsgClientPersonaState,
+        CMsgClientFriendProfileInfo,
+        CMsgClientFriendProfileInfoResponse,
+        CMsgClientGetEmoticonList,
+        CMsgClientEmoticonList,
+    },    
+    steammessages_clientserver_login::{
+        CMsgClientLoggedOff,
+        CMsgClientLogon, 
+        CMsgClientLogonResponse,
+        CMsgClientNewLoginKey,
+        CMsgClientNewLoginKeyAccepted,
+        CMsgClientHeartBeat,
+        CMsgClientRequestWebAPIAuthenticateUserNonce,
+        CMsgClientRequestWebAPIAuthenticateUserNonceResponse,
+        CMsgClientLogOff,
+        CMsgClientServerTimestampRequest,
+        CMsgClientServerTimestampResponse,
+        CMsgClientAccountInfo,
+        CMsgClientChallengeRequest,
+        CMsgClientChallengeResponse
+    },
+    steammessages_clientserver_2::{
+        CMsgGCClient,
+        CMsgClientUserNotifications,
+        CMsgClientUpdateMachineAuth,
+        CMsgClientUpdateMachineAuthResponse
+    }
 };
 use thiserror::Error;
 use tokio_stream::Stream;
@@ -232,11 +274,6 @@ impl<R: Read> Iterator for MultiBodyIter<R> {
     }
 }
 
-// #[derive(Debug)]
-// struct ServiceMethodRequestMessage<Request: ServiceMethodRequest> {
-//
-// }
-
 impl<Request: ServiceMethodRequest> NetMessage for Request {
     const KIND: EMsg = EMsg::k_EMsgServiceMethodCallFromClient;
     const IS_PROTOBUF: bool = true;
@@ -286,6 +323,47 @@ impl ServiceMethodResponseMessage {
     }
 }
 
+#[derive(Debug)]
+pub struct ServiceMethodRequestMessage {
+    job_name: String,
+    body: BytesMut,
+}
+
+impl ServiceMethodRequestMessage {
+    pub fn into_message<Request: ServiceMethodRequest>(
+        self,
+    ) -> Result<Request, NetworkError> {
+        if self.job_name == Request::NAME {
+            Ok(
+                Request::parse_from_reader(&mut self.body.reader())
+                    .map_err(|e| MalformedBody(Self::KIND, e.into()))?,
+            )
+        } else {
+            Err(NetworkError::DifferentServiceMethod(
+                Request::NAME,
+                self.job_name,
+            ))
+        }
+    }
+}
+
+impl NetMessage for ServiceMethodRequestMessage {
+    const KIND: EMsg = EMsg::k_EMsgServiceMethod;
+    const IS_PROTOBUF: bool = true;
+
+    fn read_body(data: BytesMut, header: &NetMessageHeader) -> Result<Self, MalformedBody> {
+        trace!("reading body of protobuf message {:?}", Self::KIND);
+        Ok(ServiceMethodRequestMessage {
+            job_name: header
+                .target_job_name
+                .as_deref()
+                .unwrap_or_default()
+                .to_string(),
+            body: data,
+        })
+    }
+}
+
 impl NetMessage for ServiceMethodResponseMessage {
     const KIND: EMsg = EMsg::k_EMsgServiceMethodResponse;
     const IS_PROTOBUF: bool = true;
@@ -331,6 +409,38 @@ macro_rules! proto_msg {
     };
 }
 
+proto_msg!(EMsg::k_EMsgClientToGC => CMsgGCClient);
+proto_msg!(EMsg::k_EMsgClientGamesPlayed => CMsgClientGamesPlayed);
+proto_msg!(EMsg::k_EMsgClientFriendMsg => CMsgClientFriendMsg);
+proto_msg!(EMsg::k_EMsgClientFriendMsgIncoming => CMsgClientFriendMsgIncoming);
+proto_msg!(EMsg::k_EMsgClientAddFriend => CMsgClientAddFriend);
+proto_msg!(EMsg::k_EMsgClientAddFriendResponse => CMsgClientAddFriendResponse);
+proto_msg!(EMsg::k_EMsgClientRemoveFriend => CMsgClientRemoveFriend);
+proto_msg!(EMsg::k_EMsgClientHideFriend => CMsgClientHideFriend);
+proto_msg!(EMsg::k_EMsgClientFriendsList => CMsgClientFriendsList);
+proto_msg!(EMsg::k_EMsgClientFriendsGroupsList => CMsgClientFriendsGroupsList);
+proto_msg!(EMsg::k_EMsgClientPlayerNicknameList => CMsgClientPlayerNicknameList);
+proto_msg!(EMsg::k_EMsgClientRequestFriendData => CMsgClientRequestFriendData);
+proto_msg!(EMsg::k_EMsgClientChangeStatus => CMsgClientChangeStatus);
+proto_msg!(EMsg::k_EMsgClientPersonaState => CMsgClientPersonaState);
+proto_msg!(EMsg::k_EMsgClientFriendProfileInfo => CMsgClientFriendProfileInfo);
+proto_msg!(EMsg::k_EMsgClientFriendProfileInfoResponse => CMsgClientFriendProfileInfoResponse);
+proto_msg!(EMsg::k_EMsgClientGetEmoticonList => CMsgClientGetEmoticonList);
+proto_msg!(EMsg::k_EMsgClientEmoticonList => CMsgClientEmoticonList);
+proto_msg!(EMsg::k_EMsgClientServerTimestampRequest => CMsgClientServerTimestampRequest);
+proto_msg!(EMsg::k_EMsgClientServerTimestampResponse => CMsgClientServerTimestampResponse);
+proto_msg!(EMsg::k_EMsgClientAccountInfo => CMsgClientAccountInfo);
+proto_msg!(EMsg::k_EMsgClientChallengeRequest => CMsgClientChallengeRequest);
+proto_msg!(EMsg::k_EMsgClientChallengeResponse => CMsgClientChallengeResponse);
+proto_msg!(EMsg::k_EMsgClientLogOff => CMsgClientLogOff);
+proto_msg!(EMsg::k_EMsgClientUserNotifications => CMsgClientUserNotifications);
+proto_msg!(EMsg::k_EMsgClientRequestWebAPIAuthenticateUserNonce => CMsgClientRequestWebAPIAuthenticateUserNonce);
+proto_msg!(EMsg::k_EMsgClientRequestWebAPIAuthenticateUserNonceResponse => CMsgClientRequestWebAPIAuthenticateUserNonceResponse);
+proto_msg!(EMsg::k_EMsgClientHeartBeat => CMsgClientHeartBeat);
+proto_msg!(EMsg::k_EMsgClientUpdateMachineAuthResponse => CMsgClientUpdateMachineAuthResponse);
+proto_msg!(EMsg::k_EMsgClientUpdateMachineAuth => CMsgClientUpdateMachineAuth);
+proto_msg!(EMsg::k_EMsgClientNewLoginKeyAccepted => CMsgClientNewLoginKeyAccepted);
+proto_msg!(EMsg::k_EMsgClientNewLoginKey => CMsgClientNewLoginKey);
 proto_msg!(EMsg::k_EMsgClientLogon => CMsgClientLogon);
 proto_msg!(EMsg::k_EMsgClientLoggedOff => CMsgClientLoggedOff);
 proto_msg!(EMsg::k_EMsgClientLogOnResponse => CMsgClientLogonResponse);

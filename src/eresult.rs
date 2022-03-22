@@ -1,4 +1,9 @@
+use num_enum::{FromPrimitive, IntoPrimitive};
+
+#[derive(Debug, PartialEq, FromPrimitive, IntoPrimitive)]
+#[repr(i32)]
 pub enum EResult {
+    #[num_enum(default)]
     Invalid = 0,
     OK = 1,
     Fail = 2,

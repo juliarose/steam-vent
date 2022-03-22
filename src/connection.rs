@@ -1,7 +1,9 @@
 use crate::message::{flatten_multi, NetMessage, ServiceMethodResponseMessage};
 use crate::net::{connect, NetworkError, RawNetMessage};
 use crate::service_method::ServiceMethodRequest;
-use crate::session::{anonymous, Session, SessionError};
+use crate::session::{anonymous, logged_in, Session, SessionError};
+use crate::epersonastate::EPersonaState;
+use steamid_ng::{SteamID};
 use dashmap::DashMap;
 use futures_sink::Sink;
 use futures_util::SinkExt;
@@ -13,37 +15,173 @@ use tokio::task::spawn;
 use tokio::time::timeout;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
+use protobuf::RepeatedField;
+use crate::proto::{
+    steammessages_clientserver_friends::{
+        CMsgClientAddFriend,
+        CMsgClientChangeStatus
+    },
+    steammessages_clientserver::{
+        CMsgClientGamesPlayed,
+        CMsgClientGamesPlayed_GamePlayed,
+    },
+    steammessages_clientserver_login::{
+        CMsgClientAccountInfo,
+        CMsgClientHeartBeat,
+        CMsgClientLogOff,
+        CMsgClientLogon,
+        CMsgClientRequestWebAPIAuthenticateUserNonce,
+    },
+    steammessages_friendmessages_steamclient::{
+        CFriendMessages_SendMessage_Request,
+        CFriendMessages_SendMessage_Response,
+    },
+};
 
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
+type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
+
+const SERVER_IP: &str = "162.254.192.109:27018";
 
 pub struct Connection {
-    session: Session,
+    pub session: Session,
     filter: MessageFilter,
-    rest: mpsc::Receiver<Result<RawNetMessage>>,
-    write: Box<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin>,
+    write: Box<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin + Send + Sync>
 }
 
 impl Connection {
-    pub async fn anonymous() -> Result<Self, SessionError> {
-        let (read, mut write) = connect("155.133.248.38:27020").await?;
+    pub async fn anonymous() -> Result<Login, SessionError> {
+        let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
-
         let session = anonymous(&mut read, &mut write).await?;
         let (filter, rest) = MessageFilter::new(read);
-        Ok(Connection {
+        
+        Ok((Connection {
             session,
             filter,
-            rest,
             write: Box::new(write),
-        })
+        }, rest))
+    }
+  
+    pub async fn login(credentials: CMsgClientLogon, steamid: &SteamID) -> Result<Login, SessionError> {
+        let (read, mut write) = connect(SERVER_IP).await?;
+        let mut read = flatten_multi(read);
+        let session = logged_in(&mut read, &mut write, credentials, steamid).await?;
+        let (filter, rest) = MessageFilter::new(read);
+        
+        Ok((Connection {
+            session,
+            filter,
+            write: Box::new(write),
+        }, rest))
+    }
+    
+    pub async fn reconnect(&mut self, credentials: CMsgClientLogon, steamid: &SteamID) -> Result<mpsc::Receiver<Result<RawNetMessage>>, SessionError> {
+        let (read, mut write) = connect(SERVER_IP).await?;
+        let mut read = flatten_multi(read);
+        let session = logged_in(&mut read, &mut write, credentials, steamid).await?;
+        let (filter, rest) = MessageFilter::new(read);
+        
+        self.session = session;
+        self.write = Box::new(write);
+        self.filter = filter;
+        
+        Ok(rest)
     }
 
     pub async fn send<Msg: NetMessage>(&mut self, msg: Msg) -> Result<u64> {
         let header = self.session.header();
         let id = header.source_job_id;
         let msg = RawNetMessage::from_message(header, msg)?;
+        
         self.write.send(msg).await?;
         Ok(id)
+    }
+
+    pub async fn send_response<Msg: NetMessage>(&mut self, msg: Msg, target_job_id: u64) -> Result<u64> {
+        let mut header = self.session.header();
+        
+        header.target_job_id = target_job_id;
+        
+        let id = header.source_job_id;
+        let msg = RawNetMessage::from_message(header, msg)?;
+        self.write.send(msg).await?;
+        Ok(id)
+    }
+    
+    pub async fn send_heartbeat(&mut self) -> Result<u64> {
+        self.send(CMsgClientHeartBeat::new()).await?;
+        
+        Ok(self.session.out_of_game_heartbeat_seconds as u64)
+    }
+    
+    pub async fn disconnect(&mut self) -> Result<()> {
+        self.send(CMsgClientLogOff::new()).await?;
+        
+        Ok(())
+    }
+    
+    pub async fn add_friend(&mut self, friend: &SteamID) -> Result<u64> {
+        let mut req = CMsgClientAddFriend::new();
+        
+        req.set_steamid_to_add(u64::from(*friend));
+        
+        let job_id = self.send(req).await?;
+        
+        Ok(job_id)
+    }
+    
+    pub async fn set_persona_state(&mut self, persona_state: &EPersonaState) -> Result<u64> {
+        let mut req = CMsgClientChangeStatus::new();
+        
+        req.set_persona_state(persona_state.clone() as u32);
+        
+        self.send(req).await
+    }
+    
+    pub async fn set_persona_name(&mut self, persona_name: &str) -> Result<u64> {
+        let mut req = CMsgClientAccountInfo::new();
+        
+        req.set_persona_name(persona_name.into());
+        
+        self.send(req).await
+    }
+    
+    pub async fn request_web_api_authenticate_user_nonce(&mut self) -> Result<u64> {
+        self.send(CMsgClientRequestWebAPIAuthenticateUserNonce::new()).await
+    }
+    
+    pub async fn chat_message(
+        &mut self,
+        friend: &SteamID,
+        message: &str
+    ) -> Result<CFriendMessages_SendMessage_Response> {
+        let mut req = CFriendMessages_SendMessage_Request::new();
+        
+        req.set_steamid(u64::from(friend.clone()));
+        // EChatEntryType::ChatMsg
+        req.set_chat_entry_type(1);
+        req.set_message(message.to_string());
+        req.set_contains_bbcode(false);
+        
+        self.service_method(req).await
+    }
+    
+    pub async fn set_games_played(&mut self, games: &[u64]) -> Result<u64> {
+        let mut message = CMsgClientGamesPlayed::new();
+        let games_played = games
+            .iter()
+            .map(|game_id| {
+                let mut game = CMsgClientGamesPlayed_GamePlayed::new();
+                
+                game.set_game_id(*game_id);
+                game
+            })
+            .collect::<Vec<_>>();
+        
+        message.set_games_played(RepeatedField::from_vec(games_played));
+        
+        self.send(message).await
     }
 
     pub async fn service_method<Msg: ServiceMethodRequest>(
@@ -51,16 +189,13 @@ impl Connection {
         msg: Msg,
     ) -> Result<Msg::Response> {
         let job_id = self.send(msg).await?;
-        let message = timeout(Duration::from_secs(10), self.filter.on_job_id(job_id))
+        let raw_message = timeout(Duration::from_secs(10), self.filter.on_job_id(job_id))
             .await
             .map_err(|_| NetworkError::Timeout)?
-            .map_err(|_| NetworkError::Timeout)?
-            .into_message::<ServiceMethodResponseMessage>()?;
+            .map_err(|_| NetworkError::Timeout)?;
+        let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
+        
         message.into_response::<Msg>()
-    }
-
-    pub async fn next(&mut self) -> Result<RawNetMessage> {
-        self.rest.recv().await.ok_or(NetworkError::EOF)?
     }
 }
 

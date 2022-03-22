@@ -392,7 +392,7 @@ impl Encoder<RawNetMessage> for RawMessageEncoder {
 
         assert_can_unsplit(&iv_buffer, &raw);
         let encrypted = symmetric_encrypt_with_iv_buffer(iv_buffer, raw, &self.key);
-
+        
         let mut buf = item
             .frame_header_buffer
             .unwrap_or_else(|| BytesMut::from(&[0; 8][..]));
@@ -435,7 +435,7 @@ pub async fn connect<A: ToSocketAddrs>(
     addr: A,
 ) -> Result<(
     impl Stream<Item = Result<RawNetMessage>>,
-    impl Sink<RawNetMessage, Error = NetworkError>,
+    impl Sink<RawNetMessage, Error = NetworkError> + Send + Sync,
 )> {
     let stream = TcpStream::connect(addr).await?;
     let (read, write) = stream.into_split();

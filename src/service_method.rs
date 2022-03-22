@@ -7,7 +7,7 @@ use steam_vent_proto::{
     steammessages_friendmessages_steamclient, steammessages_gameservers_steamclient,
     steammessages_player_steamclient, steammessages_publishedfile_steamclient,
     steammessages_store_steamclient, steammessages_twofactor_steamclient,
-    steammessages_useraccount_steamclient,
+    steammessages_useraccount_steamclient
 };
 
 pub trait ServiceMethodRequest: Debug + Message {

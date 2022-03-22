@@ -21,9 +21,10 @@ pub enum SessionError {
 
 #[derive(Debug, Clone)]
 pub struct Session {
-    session_id: i32,
+    pub session_id: i32,
     last_source_id: u64,
     pub steam_id: SteamID,
+    pub out_of_game_heartbeat_seconds: i32,
 }
 
 impl Session {
@@ -46,22 +47,37 @@ pub async fn anonymous<
     read: &mut Read,
     write: &mut Write,
 ) -> Result<Session> {
+    let logon = get_anon_login_msg();
+    let steamid = SteamID::new(0, Instance::All, AccountType::AnonUser, Universe::Public);
+    
     login(
         read,
         write,
-        SteamID::new(0, Instance::All, AccountType::AnonUser, Universe::Public),
+        &steamid,
+        logon
     )
     .await
 }
 
-pub async fn login<
+pub async fn logged_in<
     Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
     Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
 >(
     read: &mut Read,
     write: &mut Write,
-    steam_id: SteamID,
+    logon: CMsgClientLogon,
+    steamid: &SteamID,
 ) -> Result<Session> {
+    login(
+        read,
+        write,
+        steamid,
+        logon
+    )
+    .await
+}
+
+fn get_anon_login_msg() -> CMsgClientLogon {
     let mut logon = CMsgClientLogon::new();
     logon.set_protocol_version(65580);
     logon.set_client_os_type(203);
@@ -76,12 +92,24 @@ pub async fn login<
     logon.set_machine_name(String::new());
     logon.set_steamguard_dont_remember_computer(false);
     logon.set_chat_mode(2);
+    
+    logon
+}
 
+pub async fn login<
+    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
+    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
+>(
+    read: &mut Read,
+    write: &mut Write,
+    steamid: &SteamID,
+    logon: CMsgClientLogon,
+) -> Result<Session> {
     let header = NetMessageHeader {
         session_id: 0,
         source_job_id: u64::MAX,
         target_job_id: u64::MAX,
-        steam_id,
+        steam_id: *steamid,
         target_job_name: None,
     };
 
@@ -90,16 +118,22 @@ pub async fn login<
 
     while let Some(result) = read.next().await {
         let msg: RawNetMessage = result?;
+        
         match msg.kind {
             EMsg::k_EMsgClientLogOnResponse => {
                 let session_id = msg.header.session_id;
                 let steam_id = msg.header.steam_id;
                 let response = msg.into_message::<CMsgClientLogonResponse>()?;
+                let out_of_game_heartbeat_seconds = response.get_out_of_game_heartbeat_seconds();
+                
+                println!("{}", response.get_eresult());
+                
                 return if response.get_eresult() == 1 {
                     Ok(Session {
                         session_id,
                         steam_id,
                         last_source_id: 0,
+                        out_of_game_heartbeat_seconds,
                     })
                 } else {
                     Err(SessionError::LoginError)

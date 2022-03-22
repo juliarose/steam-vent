@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 steam-vent-proto = { version = "0.1", path = "./protobuf" }
 steam-vent-crypto = { version = "0.2", path = "./crypto" }
-tokio = { version = "1", features = ["net", "io-util"] }
+tokio = { version = "1", features = ["net", "io-util", "rt", "rt-multi-thread"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 tokio-stream = "0.1"
 binread = "2"
@@ -24,9 +24,13 @@ steamid-ng = "1"
 futures-sink = "0.3"
 futures-util = { version = "0.3", features = ["sink"] }
 dashmap = "4"
+num_enum = "0.5.6"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread"] }
 env_logger = "0.8"
 
 [workspace]
+
+[profile.dev]
+codegen-units = 1
