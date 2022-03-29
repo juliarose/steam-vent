@@ -58,7 +58,6 @@ use steam_vent_proto::{
         CMsgClientChallengeResponse
     },
     steammessages_clientserver_2::{
-        CMsgGCClient,
         CMsgClientUserNotifications,
         CMsgClientUpdateMachineAuth,
         CMsgClientUpdateMachineAuthResponse
@@ -69,7 +68,7 @@ use tokio_stream::Stream;
 
 #[derive(Error, Debug)]
 #[error("Malformed message body for {0:?}: {1}")]
-pub struct MalformedBody(EMsg, MessageBodyError);
+pub struct MalformedBody(pub EMsg, pub MessageBodyError);
 
 #[derive(Error, Debug)]
 pub enum MessageBodyError {
@@ -409,7 +408,8 @@ macro_rules! proto_msg {
     };
 }
 
-proto_msg!(EMsg::k_EMsgClientToGC => CMsgGCClient);
+// gc_msg!(EMsg::k_EMsgClientToGC => CMsgGCClient);
+// proto_msg!(EMsg::k_EMsgClientFromGC => CMsgGCClient);
 proto_msg!(EMsg::k_EMsgClientGamesPlayed => CMsgClientGamesPlayed);
 proto_msg!(EMsg::k_EMsgClientFriendMsg => CMsgClientFriendMsg);
 proto_msg!(EMsg::k_EMsgClientFriendMsgIncoming => CMsgClientFriendMsgIncoming);

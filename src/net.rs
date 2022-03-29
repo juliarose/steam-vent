@@ -41,6 +41,10 @@ pub enum NetworkError {
     DifferentMessage(EMsg, EMsg),
     #[error("Different service method expected, expected {0:?}, got {1:?}")]
     DifferentServiceMethod(&'static str, String),
+    #[error("Different gc message expected, expected {0:?}, got {1:?}")]
+    DifferentGCMessage(i32, i32),
+    #[error("Different appid expected, expected {0:?}, got {1:?}")]
+    DifferentApp(i32, i32),
     #[error("{0}")]
     MalformedBody(#[from] crate::message::MalformedBody),
     #[error("Crypto error: {0}")]
@@ -79,6 +83,7 @@ pub struct NetMessageHeader {
     pub steam_id: SteamID,
     pub session_id: i32,
     pub target_job_name: Option<Cow<'static, str>>,
+    pub routing_appid: Option<u32>,
 }
 
 impl From<CMsgProtoBufHeader> for NetMessageHeader {
@@ -91,6 +96,7 @@ impl From<CMsgProtoBufHeader> for NetMessageHeader {
             target_job_name: header
                 .has_target_job_name()
                 .then(|| header.get_target_job_name().to_string().into()),
+            routing_appid: None,
         }
     }
 }
@@ -126,6 +132,7 @@ impl NetMessageHeader {
                     session_id: 0,
                     steam_id: SteamID::default(),
                     target_job_name: None,
+                    routing_appid: None,
                 },
                 4 + 8 + 8,
             ))
@@ -143,6 +150,7 @@ impl NetMessageHeader {
                     steam_id,
                     session_id,
                     target_job_name: None,
+                    routing_appid: None,
                 },
                 4 + 3 + 8 + 8 + 1 + 8 + 4,
             ))
@@ -167,6 +175,9 @@ impl NetMessageHeader {
             proto_header.set_client_sessionid(self.session_id);
             if let Some(target_job_name) = self.target_job_name.as_deref() {
                 proto_header.set_target_job_name(target_job_name.into());
+            }
+            if let Some(routing_appid) = self.routing_appid {
+                proto_header.set_routing_appid(routing_appid);
             }
             writer.write_u32::<LittleEndian>(proto_header.compute_size())?;
             proto_header.write_to_writer(writer)?;
@@ -195,6 +206,9 @@ impl NetMessageHeader {
             proto_header.set_client_sessionid(self.session_id);
             if let Some(target_job_name) = self.target_job_name.as_deref() {
                 proto_header.set_target_job_name(target_job_name.into());
+            }
+            if let Some(routing_appid) = self.routing_appid {
+                proto_header.set_routing_appid(routing_appid);
             }
             4 + 4 + proto_header.compute_size() as usize
         } else {

@@ -36,7 +36,11 @@ use crate::proto::{
         CFriendMessages_SendMessage_Request,
         CFriendMessages_SendMessage_Response,
     },
+    steammessages_clientserver_2::{
+        CMsgGCClient,
+    },
 };
+use crate::gc::{ClientToGCMessage};
 
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
@@ -63,7 +67,10 @@ impl Connection {
         }, rest))
     }
   
-    pub async fn login(credentials: CMsgClientLogon, steamid: &SteamID) -> Result<Login, SessionError> {
+    pub async fn login(
+        credentials: CMsgClientLogon,
+        steamid: &SteamID,
+    ) -> Result<Login, SessionError> {
         let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
         let session = logged_in(&mut read, &mut write, credentials, steamid).await?;
@@ -76,7 +83,11 @@ impl Connection {
         }, rest))
     }
     
-    pub async fn reconnect(&mut self, credentials: CMsgClientLogon, steamid: &SteamID) -> Result<mpsc::Receiver<Result<RawNetMessage>>, SessionError> {
+    pub async fn reconnect(
+        &mut self,
+        credentials: CMsgClientLogon,
+        steamid: &SteamID,
+    ) -> Result<mpsc::Receiver<Result<RawNetMessage>>, SessionError> {
         let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
         let session = logged_in(&mut read, &mut write, credentials, steamid).await?;
@@ -89,7 +100,10 @@ impl Connection {
         Ok(rest)
     }
 
-    pub async fn send<Msg: NetMessage>(&mut self, msg: Msg) -> Result<u64> {
+    pub async fn send<Msg: NetMessage>(
+        &mut self,
+        msg: Msg,
+    ) -> Result<u64> {
         let header = self.session.header();
         let id = header.source_job_id;
         let msg = RawNetMessage::from_message(header, msg)?;
@@ -98,7 +112,27 @@ impl Connection {
         Ok(id)
     }
 
-    pub async fn send_response<Msg: NetMessage>(&mut self, msg: Msg, target_job_id: u64) -> Result<u64> {
+    pub async fn send_gc(
+        &mut self,
+        appid: u32,
+        msg: ClientToGCMessage,
+    ) -> Result<u64> {
+        let mut header = self.session.header();
+        
+        header.routing_appid = Some(appid);
+        
+        let id = header.source_job_id;
+        let msg = RawNetMessage::from_message(header, msg)?;
+        
+        self.write.send(msg).await?;
+        Ok(id)
+    }
+
+    pub async fn send_response<Msg: NetMessage>(
+        &mut self,
+        msg: Msg,
+        target_job_id: u64,
+    ) -> Result<u64> {
         let mut header = self.session.header();
         
         header.target_job_id = target_job_id;
@@ -109,19 +143,62 @@ impl Connection {
         Ok(id)
     }
     
-    pub async fn send_heartbeat(&mut self) -> Result<u64> {
+    // pub async fn send_gc<Msg: Message>(
+    //     &mut self,
+    //     appid: u32,
+    //     msg_type: i32,
+    //     msg: Msg,
+    // ) -> Result<u64> {
+    //     let message = CMsgGCClient::new();
+        
+    //     {
+    //         let header = CMsgProtoBufHeader::new();
+            
+    //         let header = self.session.gc_header();
+    //         let id = header.source_job_id;
+    //         let msg = RawNetMessage::from_message(header, msg)?;
+    //     }
+        
+    //     message.set_appid(appid);
+    //     message.set_payload();
+        
+    //     self.send(msg).await
+    // }
+
+    pub async fn service_method<Msg: ServiceMethodRequest>(
+        &mut self,
+        msg: Msg,
+    ) -> Result<Msg::Response> {
+        let job_id = self.send(msg).await?;
+        let raw_message = timeout(Duration::from_secs(10), self.filter.on_job_id(job_id))
+            .await
+            .map_err(|_| NetworkError::Timeout)?
+            .map_err(|_| NetworkError::Timeout)?;
+        let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
+        
+        message.into_response::<Msg>()
+    }
+    
+    pub async fn send_heartbeat(
+        &mut self,
+    ) -> Result<u64> {
         self.send(CMsgClientHeartBeat::new()).await?;
         
         Ok(self.session.out_of_game_heartbeat_seconds as u64)
     }
     
-    pub async fn disconnect(&mut self) -> Result<()> {
+    pub async fn disconnect(
+        &mut self,
+    ) -> Result<()> {
         self.send(CMsgClientLogOff::new()).await?;
         
         Ok(())
     }
     
-    pub async fn add_friend(&mut self, friend: &SteamID) -> Result<u64> {
+    pub async fn add_friend(
+        &mut self,
+        friend: &SteamID,
+    ) -> Result<u64> {
         let mut req = CMsgClientAddFriend::new();
         
         req.set_steamid_to_add(u64::from(*friend));
@@ -131,7 +208,10 @@ impl Connection {
         Ok(job_id)
     }
     
-    pub async fn set_persona_state(&mut self, persona_state: &EPersonaState) -> Result<u64> {
+    pub async fn set_persona_state(
+        &mut self,
+        persona_state: &EPersonaState,
+    ) -> Result<u64> {
         let mut req = CMsgClientChangeStatus::new();
         
         req.set_persona_state(persona_state.clone() as u32);
@@ -139,7 +219,10 @@ impl Connection {
         self.send(req).await
     }
     
-    pub async fn set_persona_name(&mut self, persona_name: &str) -> Result<u64> {
+    pub async fn set_persona_name(
+        &mut self,
+        persona_name: &str,
+    ) -> Result<u64> {
         let mut req = CMsgClientAccountInfo::new();
         
         req.set_persona_name(persona_name.into());
@@ -154,7 +237,7 @@ impl Connection {
     pub async fn chat_message(
         &mut self,
         friend: &SteamID,
-        message: &str
+        message: &str,
     ) -> Result<CFriendMessages_SendMessage_Response> {
         let mut req = CFriendMessages_SendMessage_Request::new();
         
@@ -167,7 +250,10 @@ impl Connection {
         self.service_method(req).await
     }
     
-    pub async fn set_games_played(&mut self, games: &[u64]) -> Result<u64> {
+    pub async fn set_games_played(
+        &mut self,
+        games: &[u64],
+    ) -> Result<u64> {
         let mut message = CMsgClientGamesPlayed::new();
         let games_played = games
             .iter()
@@ -182,20 +268,6 @@ impl Connection {
         message.set_games_played(RepeatedField::from_vec(games_played));
         
         self.send(message).await
-    }
-
-    pub async fn service_method<Msg: ServiceMethodRequest>(
-        &mut self,
-        msg: Msg,
-    ) -> Result<Msg::Response> {
-        let job_id = self.send(msg).await?;
-        let raw_message = timeout(Duration::from_secs(10), self.filter.on_job_id(job_id))
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|_| NetworkError::Timeout)?;
-        let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
-        
-        message.into_response::<Msg>()
     }
 }
 

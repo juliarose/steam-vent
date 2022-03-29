@@ -6,8 +6,6 @@ Forked from https://github.com/icewind1991/steam-vent to add methods for logins 
 
 Allows communication with the steam servers using the same protocol as the regular steam client.
 
-## Usage
-
 Note that this project is still in early development and api's might see large changes.
 
 ## Credit
