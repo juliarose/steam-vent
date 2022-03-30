@@ -3,6 +3,7 @@ use crate::net::{connect, NetworkError, RawNetMessage};
 use crate::service_method::ServiceMethodRequest;
 use crate::session::{anonymous, logged_in, Session, SessionError};
 use crate::epersonastate::EPersonaState;
+use crate::game_coordinator::ClientToGCMessage;
 use steamid_ng::{SteamID};
 use dashmap::DashMap;
 use futures_sink::Sink;
@@ -36,11 +37,7 @@ use crate::proto::{
         CFriendMessages_SendMessage_Request,
         CFriendMessages_SendMessage_Response,
     },
-    steammessages_clientserver_2::{
-        CMsgGCClient,
-    },
 };
-use crate::gc::{ClientToGCMessage};
 
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
@@ -114,12 +111,11 @@ impl Connection {
 
     pub async fn send_gc(
         &mut self,
-        appid: u32,
         msg: ClientToGCMessage,
     ) -> Result<u64> {
         let mut header = self.session.header();
         
-        header.routing_appid = Some(appid);
+        header.routing_appid = Some(msg.0.get_appid());
         
         let id = header.source_job_id;
         let msg = RawNetMessage::from_message(header, msg)?;
@@ -143,28 +139,6 @@ impl Connection {
         Ok(id)
     }
     
-    // pub async fn send_gc<Msg: Message>(
-    //     &mut self,
-    //     appid: u32,
-    //     msg_type: i32,
-    //     msg: Msg,
-    // ) -> Result<u64> {
-    //     let message = CMsgGCClient::new();
-        
-    //     {
-    //         let header = CMsgProtoBufHeader::new();
-            
-    //         let header = self.session.gc_header();
-    //         let id = header.source_job_id;
-    //         let msg = RawNetMessage::from_message(header, msg)?;
-    //     }
-        
-    //     message.set_appid(appid);
-    //     message.set_payload();
-        
-    //     self.send(msg).await
-    // }
-
     pub async fn service_method<Msg: ServiceMethodRequest>(
         &mut self,
         msg: Msg,

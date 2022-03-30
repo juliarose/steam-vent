@@ -1,5 +1,5 @@
 use crate::{
-    net::{PROTO_MASK, NetMessageHeader, NetworkError, RawNetMessage},
+    net::{PROTO_MASK, NetworkError, RawNetMessage},
     message::{NetMessage, MalformedBody},
     proto::{
         enums_clientserver::EMsg,
@@ -9,20 +9,18 @@ use crate::{
         steammessages_base::CMsgProtoBufHeader,
     },
 };
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 use bytes::{Buf, BytesMut};
-use protobuf::{Message, ProtobufError};
+use protobuf::Message;
 use std::fmt::Debug;
-use std::io::{Cursor, Read, Write};
-
-const JOBID_NONE: u64 = u64::MAX;
+use std::io::{Cursor, Write};
 
 #[derive(Debug)]
 pub struct ClientFromGCMessage {
     pub appid: u32,
     pub msgtype: i32,
     pub target_job_id: u64,
-    payload: BytesMut,
+    pub payload: BytesMut,
 }
 
 impl ClientFromGCMessage {
@@ -30,25 +28,46 @@ impl ClientFromGCMessage {
     
     pub fn from_message(msg: RawNetMessage) -> Result<Self, NetworkError> {
         let msg = into_message(msg)?;
+        // println!("msg {:?}", msg);
         let appid = msg.get_appid();
         let msgtype = msg.get_msgtype() as i32 & (!PROTO_MASK) as i32;
         let payload = msg.get_payload();
-        let mut payload = BytesMut::from(payload);
-        let mut reader = Cursor::new(&payload);
-        // skip 4 bytes
-        let _ = reader.read_i32::<LittleEndian>()?;
-        let header_length = reader.read_i32::<LittleEndian>()?;
-        let mut target_job_id = JOBID_NONE;
+        let is_proto = (msg.get_msgtype() as i32 & PROTO_MASK as i32) != 0;
         
-        if header_length > 0 {
-            let proto_bytes = payload.split_to(header_length as usize + 8);
+        // println!("msgtype {}", msgtype);
+        // println!("is_proto {}", is_proto);
+        // println!("yes {}", (msg.get_msgtype() as i32 & PROTO_MASK as i32));
+        // println!("msg payload {:?}", payload);
+        
+        let mut buff = BytesMut::from(payload);
+        let (target_job_id, payload) = if is_proto {
+            let proto_bytes = {
+                // take first 8 bytes
+                let header = buff.split_to(8);
+                let mut reader = Cursor::new(&header);
+                // skip the first 4 bytes
+                let _ = reader.read_i32::<LittleEndian>()?;
+                let header_length = reader.read_i32::<LittleEndian>()?;
+                let proto_bytes = buff.split_to(header_length as usize);
+                
+                proto_bytes
+            };
             let header = CMsgProtoBufHeader::parse_from_reader(&mut proto_bytes.reader())
                 .map_err(|e| MalformedBody(Self::KIND, e.into()))?;
+            let target_job_id = header.get_jobid_target();
+            let payload = BytesMut::from(buff);
             
-            target_job_id = header.get_jobid_target();
+            (target_job_id, payload)
         } else {
-            let _ = payload.split_to(8);
-        }
+            let header = buff.split_to(18);
+            let mut reader = Cursor::new(header);
+            let _ = reader.read_u16::<LittleEndian>()?;
+            let target_job_id = reader.read_u64::<LittleEndian>()?;
+            let payload = BytesMut::from(buff);
+            
+            (target_job_id, payload)
+        };
+        // println!("payload {:?}", &payload[..]);
         
         Ok(Self {
             appid,
@@ -78,7 +97,6 @@ fn into_message(msg: RawNetMessage) -> Result<CMsgGCClient, NetworkError> {
         Err(NetworkError::DifferentMessage(msg.kind, EMsg::k_EMsgClientFromGC))
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct ClientToGCMessage(pub CMsgGCClient);

@@ -23,23 +23,11 @@ pub enum SessionError {
 pub struct Session {
     pub session_id: i32,
     last_source_id: u64,
-    gc_last_source_id: u64,
     pub steam_id: SteamID,
     pub out_of_game_heartbeat_seconds: i32,
 }
 
 impl Session {
-    pub fn gc_header(&mut self) -> NetMessageHeader {
-        self.gc_last_source_id += 1;
-        NetMessageHeader {
-            session_id: self.session_id,
-            source_job_id: self.gc_last_source_id,
-            target_job_id: u64::MAX,
-            steam_id: self.steam_id,
-            target_job_name: None,
-            routing_appid: None,
-        }
-    }
     
     pub fn header(&mut self) -> NetMessageHeader {
         self.last_source_id += 1;
@@ -146,7 +134,6 @@ pub async fn login<
                         session_id,
                         steam_id,
                         last_source_id: 0,
-                        gc_last_source_id: 0,
                         out_of_game_heartbeat_seconds,
                     })
                 } else {
