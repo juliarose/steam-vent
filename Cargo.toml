@@ -7,7 +7,6 @@ edition = "2018"
 [dependencies]
 steam-vent-proto = { version = "0.1", path = "./protobuf" }
 steam-vent-crypto = { version = "0.2", path = "./crypto" }
-# gamecoordinator = { version = "0.1", path = "../gamecoordinator" }
 tokio = { version = "1", features = ["net", "io-util", "rt", "rt-multi-thread"] }
 tokio-util = { version = "0.6", features = ["codec"] }
 tokio-stream = "0.1"
