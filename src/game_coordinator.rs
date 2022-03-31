@@ -67,7 +67,8 @@ impl ClientFromGCMessage {
             
             (target_job_id, payload)
         };
-        // println!("payload {:?}", &payload[..]);
+        println!("{}", target_job_id);
+        println!("payload {:?}", &payload[..]);
         
         Ok(Self {
             appid,
