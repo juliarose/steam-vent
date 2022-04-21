@@ -2,7 +2,7 @@ use crate::message::{flatten_multi, NetMessage, ServiceMethodResponseMessage};
 use crate::net::{connect, NetworkError, RawNetMessage};
 use crate::service_method::ServiceMethodRequest;
 use crate::session::{anonymous, logged_in, Session, SessionError};
-use crate::epersonastate::EPersonaState;
+use crate::enums::EPersonaState;
 use crate::game_coordinator::ClientToGCMessage;
 use steamid_ng::{SteamID};
 use dashmap::DashMap;
@@ -42,7 +42,7 @@ use crate::proto::{
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
 
-const SERVER_IP: &str = "162.254.192.109:27018";
+const SERVER_IP: &str = "162.254.196.67:27017";
 
 pub struct Connection {
     pub session: Session,
