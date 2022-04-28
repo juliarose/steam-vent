@@ -171,11 +171,11 @@ impl Connection {
     
     pub async fn add_friend(
         &mut self,
-        friend: &SteamID,
+        friend: SteamID,
     ) -> Result<u64> {
         let mut req = CMsgClientAddFriend::new();
         
-        req.set_steamid_to_add(u64::from(*friend));
+        req.set_steamid_to_add(u64::from(friend));
         
         let job_id = self.send(req).await?;
         
