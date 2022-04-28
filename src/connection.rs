@@ -184,22 +184,22 @@ impl Connection {
     
     pub async fn set_persona_state(
         &mut self,
-        persona_state: &EPersonaState,
+        persona_state: EPersonaState,
     ) -> Result<u64> {
         let mut req = CMsgClientChangeStatus::new();
         
-        req.set_persona_state(persona_state.clone() as u32);
+        req.set_persona_state(persona_state as u32);
         
         self.send(req).await
     }
     
     pub async fn set_persona_name(
         &mut self,
-        persona_name: &str,
+        persona_name: String,
     ) -> Result<u64> {
         let mut req = CMsgClientAccountInfo::new();
         
-        req.set_persona_name(persona_name.into());
+        req.set_persona_name(persona_name);
         
         self.send(req).await
     }
@@ -210,15 +210,15 @@ impl Connection {
     
     pub async fn chat_message(
         &mut self,
-        friend: &SteamID,
-        message: &str,
+        friend: SteamID,
+        message: String,
     ) -> Result<CFriendMessages_SendMessage_Response> {
         let mut req = CFriendMessages_SendMessage_Request::new();
         
-        req.set_steamid(u64::from(friend.clone()));
+        req.set_steamid(u64::from(friend));
         // EChatEntryType::ChatMsg
         req.set_chat_entry_type(1);
-        req.set_message(message.to_string());
+        req.set_message(message);
         req.set_contains_bbcode(false);
         
         self.service_method(req).await
