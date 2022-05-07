@@ -46,7 +46,7 @@ const SERVER_IP: &str = "162.254.196.67:27017";
 
 pub struct Connection {
     pub session: Session,
-    filter: MessageFilter,
+    filter: Arc<MessageFilter>,
     write: Box<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin + Send + Sync>
 }
 
@@ -59,7 +59,7 @@ impl Connection {
         
         Ok((Connection {
             session,
-            filter,
+            filter: Arc::new(filter),
             write: Box::new(write),
         }, rest))
     }
@@ -75,7 +75,7 @@ impl Connection {
         
         Ok((Connection {
             session,
-            filter,
+            filter: Arc::new(filter),
             write: Box::new(write),
         }, rest))
     }
@@ -92,7 +92,7 @@ impl Connection {
         
         self.session = session;
         self.write = Box::new(write);
-        self.filter = filter;
+        self.filter = Arc::new(filter);
         
         Ok(rest)
     }
@@ -142,15 +142,37 @@ impl Connection {
     pub async fn service_method<Msg: ServiceMethodRequest>(
         &mut self,
         msg: Msg,
-    ) -> Result<Msg::Response> {
+    ) -> Result<oneshot::Receiver<Result<Msg::Response>>>
+    where
+        <Msg as ServiceMethodRequest>::Response: Send + Sized
+    {
         let job_id = self.send(msg).await?;
-        let raw_message = timeout(Duration::from_secs(10), self.filter.on_job_id(job_id))
-            .await
-            .map_err(|_| NetworkError::Timeout)?
-            .map_err(|_| NetworkError::Timeout)?;
-        let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
+        let filter = Arc::clone(&self.filter);
+        let (tx, rx) = oneshot::channel::<Result<Msg::Response>>();
         
-        message.into_response::<Msg>()
+        async fn wait_for_response<Msg: ServiceMethodRequest>(
+            filter: &MessageFilter,
+            job_id: u64,
+        ) -> Result<Msg::Response> {
+            let raw_message = timeout(Duration::from_secs(10), filter.on_job_id(job_id))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|_| NetworkError::Timeout)?;            
+            let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
+            
+            message.into_response::<Msg>()
+        }
+        
+        tokio::spawn(async move {
+            let response = wait_for_response::<Msg>(
+                &filter,
+                job_id
+            ).await;
+            
+            tx.send(response);
+        });
+        
+        Ok(rx)
     }
     
     pub async fn send_heartbeat(
@@ -212,7 +234,7 @@ impl Connection {
         &mut self,
         friend: SteamID,
         message: String,
-    ) -> Result<CFriendMessages_SendMessage_Response> {
+    ) -> Result<oneshot::Receiver<Result<CFriendMessages_SendMessage_Response>>> {
         let mut req = CFriendMessages_SendMessage_Request::new();
         
         req.set_steamid(u64::from(friend));
