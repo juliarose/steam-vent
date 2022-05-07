@@ -146,10 +146,6 @@ impl Connection {
     where
         <Msg as ServiceMethodRequest>::Response: Send + Sized
     {
-        let job_id = self.send(msg).await?;
-        let filter = Arc::clone(&self.filter);
-        let (tx, rx) = oneshot::channel::<Result<Msg::Response>>();
-        
         async fn wait_for_response<Msg: ServiceMethodRequest>(
             filter: &MessageFilter,
             job_id: u64,
@@ -163,15 +159,20 @@ impl Connection {
             message.into_response::<Msg>()
         }
         
+        let job_id = self.send(msg).await?;
+        let filter = Arc::clone(&self.filter);
+        let (tx, rx) = oneshot::channel::<Result<Msg::Response>>();
+        
         tokio::spawn(async move {
             let response = wait_for_response::<Msg>(
                 &filter,
                 job_id
             ).await;
-            
-            tx.send(response);
+            let _ = tx.send(response);
         });
         
+        // this could return the JoinHandle or a receiver
+        // either one works, I guess?
         Ok(rx)
     }
     
