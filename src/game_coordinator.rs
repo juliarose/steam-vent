@@ -28,16 +28,10 @@ impl ClientFromGCMessage {
     
     pub fn from_message(msg: RawNetMessage) -> Result<Self, NetworkError> {
         let msg = into_message(msg)?;
-        // println!("msg {:?}", msg);
         let appid = msg.get_appid();
         let msgtype = msg.get_msgtype() as i32 & (!PROTO_MASK) as i32;
         let payload = msg.get_payload();
         let is_proto = (msg.get_msgtype() as i32 & PROTO_MASK as i32) != 0;
-        
-        // println!("msgtype {}", msgtype);
-        // println!("is_proto {}", is_proto);
-        // println!("yes {}", (msg.get_msgtype() as i32 & PROTO_MASK as i32));
-        // println!("msg payload {:?}", payload);
         
         let mut buff = BytesMut::from(payload);
         let (target_job_id, payload) = if is_proto {
@@ -67,8 +61,6 @@ impl ClientFromGCMessage {
             
             (target_job_id, payload)
         };
-        println!("{}", target_job_id);
-        println!("payload {:?}", &payload[..]);
         
         Ok(Self {
             appid,
