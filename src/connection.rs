@@ -163,7 +163,7 @@ impl Connection {
         let filter = Arc::clone(&self.filter);
         let (tx, rx) = oneshot::channel::<Result<Msg::Response>>();
         
-        tokio::spawn(async move {
+        spawn(async move {
             let response = wait_for_response::<Msg>(
                 &filter,
                 job_id
