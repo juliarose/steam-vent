@@ -96,12 +96,20 @@ pub struct ClientToGCMessage(pub CMsgGCClient);
 
 impl ClientToGCMessage {
     
-    pub fn new(appid: u32, msgtype: i32) -> Self {
+    pub fn new(
+        appid: u32,
+        msgtype: i32,
+        is_proto: bool,
+    ) -> Self {
         let mut body = CMsgGCClient::new();
         
         body.set_appid(appid);
-        // body.set_msgtype(msgtype as u32 | PROTO_MASK);
-        body.set_msgtype(msgtype as u32);
+        
+        if is_proto {
+            body.set_msgtype(msgtype as u32 | PROTO_MASK);
+        } else {
+            body.set_msgtype(msgtype as u32);
+        }
         
         Self(body)
     }
