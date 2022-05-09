@@ -12,8 +12,7 @@ use crate::{
 use byteorder::{LittleEndian, ReadBytesExt};
 use bytes::{Buf, BytesMut};
 use protobuf::Message;
-use std::fmt::Debug;
-use std::io::{Cursor, Write};
+use std::{fmt::Debug, io::{Cursor, Write}};
 
 #[derive(Debug)]
 pub struct ClientFromGCMessage {
@@ -32,8 +31,8 @@ impl ClientFromGCMessage {
         let msgtype = msg.get_msgtype() as i32 & (!PROTO_MASK) as i32;
         let payload = msg.get_payload();
         let is_proto = (msg.get_msgtype() as i32 & PROTO_MASK as i32) != 0;
-        
         let mut buff = BytesMut::from(payload);
+        
         let (target_job_id, payload) = if is_proto {
             let proto_bytes = {
                 // take first 8 bytes
@@ -95,6 +94,14 @@ fn into_message(msg: RawNetMessage) -> Result<CMsgGCClient, NetworkError> {
 pub struct ClientToGCMessage(pub CMsgGCClient);
 
 impl ClientToGCMessage {
+    
+    /// Sets the payload.
+    pub fn set_payload(
+        &mut self,
+        payload: Vec<u8>,
+    ) {
+        self.0.set_payload(payload);
+    }
     
     pub fn new(
         appid: u32,
