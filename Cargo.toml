@@ -23,7 +23,7 @@ log = "0.4"
 steamid-ng = "1"
 futures-sink = "0.3"
 futures-util = { version = "0.3", features = ["sink"] }
-dashmap = "4"
+dashmap = "5"
 num_enum = "0.5.6"
 
 [dev-dependencies]
