@@ -126,16 +126,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let account_name = prompt("Account name?");
     let password = prompt("Password?");
     let two_factor_code = prompt("Two factor code?");
-    let mut login = Connection::default_login_message(
+    let mut credentials = Connection::default_login_message(
         account_name,
         password,
     );
     
-    login.set_two_factor_code(two_factor_code);
+    credentials.set_two_factor_code(two_factor_code);
     
-    let (mut connection, rest) = Connection::login(
-        login,
-    ).await?;
+    let (
+        mut connection,
+        rest,
+    ) = Connection::login(credentials).await?;
     // We're logged in
     let out_of_game_heartbeat_seconds = connection.send_heartbeat().await?;
     let (tx, rx) = mpsc::channel::<Message>(10);
