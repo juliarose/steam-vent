@@ -99,8 +99,8 @@ fn get_machine_id() -> Vec<u8> {
         machine_id
     } else {
         let machine_id = get_random_machine_id();
-        // it shouldn't be super important if this successfully saves or not
-        let _ = save_file(
+        // It should be OK if this panics
+        save_file(
             get_filepath("machineid"),
             &machine_id,
         ).unwrap();
