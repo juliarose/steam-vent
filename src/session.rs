@@ -70,12 +70,13 @@ pub async fn logged_in<
     read: &mut Read,
     write: &mut Write,
     logon: CMsgClientLogon,
-    steamid: &SteamID,
 ) -> Result<Session> {
+    let steamid = SteamID::new(0, Instance::Desktop, AccountType::Individual, Universe::Public);
+    
     login(
         read,
         write,
-        steamid,
+        &steamid,
         logon
     )
     .await
@@ -117,10 +118,10 @@ pub async fn login<
         target_job_name: None,
         routing_appid: None,
     };
-
     let msg = RawNetMessage::from_message(header, logon)?;
+    
     write.send(msg).await?;
-
+    
     while let Some(result) = read.next().await {
         let msg: RawNetMessage = result?;
         

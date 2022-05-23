@@ -82,11 +82,10 @@ impl Connection {
   
     pub async fn login(
         credentials: CMsgClientLogon,
-        steamid: &SteamID,
     ) -> Result<Login, SessionError> {
         let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
-        let session = logged_in(&mut read, &mut write, credentials, steamid).await?;
+        let session = logged_in(&mut read, &mut write, credentials).await?;
         let (filter, rest) = MessageFilter::new(read);
         
         Ok((Connection {
@@ -99,11 +98,10 @@ impl Connection {
     pub async fn reconnect(
         &mut self,
         credentials: CMsgClientLogon,
-        steamid: &SteamID,
     ) -> Result<mpsc::Receiver<Result<RawNetMessage>>, SessionError> {
         let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
-        let session = logged_in(&mut read, &mut write, credentials, steamid).await?;
+        let session = logged_in(&mut read, &mut write, credentials).await?;
         let (filter, rest) = MessageFilter::new(read);
         
         self.session = session;

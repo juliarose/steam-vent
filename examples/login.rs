@@ -123,9 +123,6 @@ fn prompt(message: &str) -> String {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     
-    // Logins don't really need a steamid but for now it's required to get things working
-    let steamid = prompt("Steam ID?");
-    let steamid = SteamID::from(steamid.parse::<u64>().unwrap());
     let account_name = prompt("Account name?");
     let password = prompt("Password?");
     let two_factor_code = prompt("Two factor code?");
@@ -138,7 +135,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let (mut connection, rest) = Connection::login(
         login,
-        &steamid,
     ).await?;
     // We're logged in
     let out_of_game_heartbeat_seconds = connection.send_heartbeat().await?;
