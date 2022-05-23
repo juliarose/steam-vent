@@ -50,7 +50,7 @@ const SERVER_IP: &str = "162.254.196.67:27017";
 pub struct Connection {
     pub session: Session,
     filter: Arc<MessageFilter>,
-    write: Box<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin + Send + Sync>
+    write: Box<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin + Send + Sync>,
 }
 
 impl Connection {

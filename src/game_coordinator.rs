@@ -94,7 +94,6 @@ fn into_message(msg: RawNetMessage) -> Result<CMsgGCClient, NetworkError> {
 pub struct ClientToGCMessage(pub CMsgGCClient);
 
 impl ClientToGCMessage {
-    
     /// Sets the payload.
     pub fn set_payload(
         &mut self,
