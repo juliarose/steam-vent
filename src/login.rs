@@ -103,19 +103,23 @@ fn get_machine_id() -> Vec<u8> {
         let _ = save_file(
             get_filepath("machineid"),
             &machine_id,
-        );
+        ).unwrap();
         
         machine_id
     }
 }
 
+fn logins_path() -> PathBuf {
+    let rootdir = env!("CARGO_MANIFEST_DIR");
+    let filepath = Path::new(rootdir).join("logins");
+    
+    filepath
+}
+
 fn get_filepath(
     filename: &str,
 ) -> PathBuf {
-    let rootdir = env!("CARGO_MANIFEST_DIR");
-    let filepath = Path::new(rootdir).join(filename);
-    
-    filepath
+    logins_path().join(filename)
 }
 
 fn get_machine_id_from_file() -> std::io::Result<Vec<u8>> {
@@ -133,9 +137,13 @@ fn save_file(
     filepath: PathBuf,
     data: &[u8],
 ) -> std::io::Result<()> {
-    let temp_filepath = filepath.join(".temp");
+    let _ = std::fs::create_dir(logins_path());
+    let mut temp_filepath = filepath.clone();
+    
+    temp_filepath.set_extension(".temp");
+    
     let mut temp_file = File::create(&temp_filepath)?;
-
+    
     match temp_file.write_all(data) {
         Ok(_) => {
             temp_file.flush()?;
