@@ -41,10 +41,6 @@ pub enum NetworkError {
     DifferentMessage(EMsg, EMsg),
     #[error("Different service method expected, expected {0:?}, got {1:?}")]
     DifferentServiceMethod(&'static str, String),
-    #[error("Different gc message expected, expected {0:?}, got {1:?}")]
-    DifferentGCMessage(i32, i32),
-    #[error("Different appid expected, expected {0:?}, got {1:?}")]
-    DifferentApp(i32, i32),
     #[error("{0}")]
     MalformedBody(#[from] crate::message::MalformedBody),
     #[error("Crypto error: {0}")]

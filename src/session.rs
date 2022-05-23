@@ -1,13 +1,15 @@
 use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
-use crate::proto::steammessages_base::CMsgIPAddress;
-use crate::proto::steammessages_clientserver_login::CMsgClientLogon;
+use crate::eresult::EResult;
+use crate::proto::{
+    enums_clientserver::EMsg,
+    steammessages_clientserver_login::CMsgClientLogonResponse,
+    steammessages_base::CMsgIPAddress,
+    steammessages_clientserver_login::CMsgClientLogon,
+};
 use futures_util::{Sink, SinkExt};
-use steam_vent_proto::enums_clientserver::EMsg;
-use steam_vent_proto::steammessages_clientserver_login::CMsgClientLogonResponse;
 use steamid_ng::{AccountType, Instance, SteamID, Universe};
 use thiserror::Error;
-use tokio_stream::Stream;
-use tokio_stream::StreamExt;
+use tokio_stream::{Stream, StreamExt};
 
 type Result<T, E = SessionError> = std::result::Result<T, E>;
 
@@ -15,8 +17,8 @@ type Result<T, E = SessionError> = std::result::Result<T, E>;
 pub enum SessionError {
     #[error("Network error: {0:#}")]
     Network(#[from] NetworkError),
-    #[error("Login failed")]
-    LoginError,
+    #[error("Login failed: {:?}", .0)]
+    Login(EResult),
 }
 
 #[derive(Debug, Clone)]
@@ -128,8 +130,9 @@ pub async fn login<
                 let steam_id = msg.header.steam_id;
                 let response = msg.into_message::<CMsgClientLogonResponse>()?;
                 let out_of_game_heartbeat_seconds = response.get_out_of_game_heartbeat_seconds();
+                let eresult: EResult = response.get_eresult().into();
                 
-                return if response.get_eresult() == 1 {
+                return if eresult == EResult::OK {
                     Ok(Session {
                         session_id,
                         steam_id,
@@ -137,7 +140,7 @@ pub async fn login<
                         out_of_game_heartbeat_seconds,
                     })
                 } else {
-                    Err(SessionError::LoginError)
+                    Err(SessionError::Login(eresult))
                 };
             }
             _ => {}
