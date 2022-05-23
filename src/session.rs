@@ -132,16 +132,16 @@ pub async fn login<
                 let out_of_game_heartbeat_seconds = response.get_out_of_game_heartbeat_seconds();
                 let eresult: EResult = response.get_eresult().into();
                 
-                return if eresult == EResult::OK {
-                    Ok(Session {
+                if eresult == EResult::OK {
+                    return Ok(Session {
                         session_id,
                         steam_id,
                         last_source_id: 0,
                         out_of_game_heartbeat_seconds,
-                    })
+                    });
                 } else {
-                    Err(SessionError::Login(eresult))
-                };
+                    return Err(SessionError::Login(eresult));
+                }
             }
             _ => {}
         }
