@@ -1,21 +1,24 @@
-use crate::message::{flatten_multi, NetMessage, ServiceMethodResponseMessage};
-use crate::net::{connect, NetworkError, RawNetMessage};
-use crate::service_method::ServiceMethodRequest;
-use crate::session::{anonymous, logged_in, Session, SessionError};
-use crate::enums::EPersonaState;
-use crate::game_coordinator::ClientToGCMessage;
-use steamid_ng::{SteamID};
+use crate::{
+    message::{flatten_multi, NetMessage, ServiceMethodResponseMessage},
+    net::{connect, NetworkError, RawNetMessage},
+    service_method::ServiceMethodRequest,
+    session::{anonymous, logged_in, Session, SessionError},
+    enums::EPersonaState,
+    game_coordinator::ClientToGCMessage,
+    login,
+};
+use std::{sync::Arc, time::Duration};
+use steamid_ng::SteamID;
 use dashmap::DashMap;
 use futures_sink::Sink;
 use futures_util::SinkExt;
-use std::sync::Arc;
-use std::time::Duration;
 use steam_vent_proto::enums_clientserver::EMsg;
-use tokio::sync::{broadcast, mpsc, oneshot};
-use tokio::task::spawn;
-use tokio::time::timeout;
-use tokio_stream::Stream;
-use tokio_stream::StreamExt;
+use tokio::{
+    sync::{broadcast, mpsc, oneshot},
+    task::spawn,
+    time::timeout,
+};
+use tokio_stream::{Stream, StreamExt};
 use protobuf::RepeatedField;
 use crate::proto::{
     steammessages_clientserver_friends::{
@@ -51,6 +54,19 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Creates the base message to login. Pass this to [`Connection::login`] to login.  If you 
+    /// are logging in with a two factor code or a login key, you will need to modify this 
+    /// message to include them.
+    pub fn default_login_message(
+        account_name: String,
+        password: String,
+    ) -> CMsgClientLogon {
+        login::create_logon(
+            account_name,
+            password,
+        )
+    }
+    
     pub async fn anonymous() -> Result<Login, SessionError> {
         let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
