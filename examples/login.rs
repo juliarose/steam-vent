@@ -126,7 +126,7 @@ async fn handle_connection(
                 };
                 
                 if message == "hello" {
-                    let message = format!("hi #{}", count);
+                    let message = format!("hi! you've sent me {} message(s)", count);
                     
                     connection.chat_message(steamid, message).await?;
                 }
