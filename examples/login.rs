@@ -1,5 +1,4 @@
 /// Demonstrates logging in and replying to the chat message "hello"
-
 use steam_vent::connection::Connection;
 use steamid_ng::SteamID;
 use steam_vent::proto::{
@@ -50,23 +49,27 @@ async fn service_method(
     msg: RawNetMessage,
     tx: &Sender<Message>,
 ) -> Result<(), NetworkError> {
-    fn get_service_request<Request: ServiceMethodRequest>(msg: RawNetMessage) -> Result<Request, NetworkError> {
-        let message = msg.into_message::<ServiceMethodRequestMessage>()?;
+    fn get_service_request<Request: ServiceMethodRequest>(
+        msg: RawNetMessage,
+    ) -> Result<Request, NetworkError> {
+        let msg = msg.into_message::<ServiceMethodRequestMessage>()?;
         
-        message.into_message::<Request>()
+        msg.into_message::<Request>()
     }
     
-    // for service methods I believe this should always be present
-    let target_job_name = msg.header.target_job_name.as_ref().ok_or(NetworkError::InvalidHeader)?;
+    let target_job_name = msg.header.target_job_name.as_ref()
+        .ok_or(NetworkError::InvalidHeader)?;
     
     match target_job_name.as_ref() {
         CFriendMessages_IncomingMessage_Notification::NAME => {
-            let message = get_service_request::<CFriendMessages_IncomingMessage_Notification>(msg)?;
-            let steamid = SteamID::from(message.get_steamid_friend());
-            let message = message.get_message().to_string();
+            let msg = get_service_request::<CFriendMessages_IncomingMessage_Notification>(msg)?;
+            let message = msg.get_message().to_string();
             
             if !message.is_empty() {
-                let _ = tx.send(Message::ChatMessage { message, steamid }).await;
+                let _ = tx.send(Message::ChatMessage {
+                    message,
+                    steamid: SteamID::from(msg.get_steamid_friend()),
+                }).await;
             }
         },
         _target_job_name => {},
@@ -84,13 +87,12 @@ async fn handle_connection(
             Message::ChatMessage {
                 message,
                 steamid,
-            } => {
-                if message == "hello" {
-                    connection.chat_message(steamid, String::from("hi :)")).await?;
-                }
+            } if message == "hello" => {
+                connection.chat_message(steamid, String::from("hi :)")).await?;
             },
+            Message::ChatMessage { .. } => {},
             Message::SendHeartbeat => {
-                let _ = connection.send_heartbeat().await?;
+                connection.send_heartbeat().await?;
             },
         }
     }
@@ -98,8 +100,7 @@ async fn handle_connection(
     Ok(())
 }
 
-// This will continue to send a heartbeat for the connection
-// This may be moved into the main module later on to simplify the interface a bit
+// This will continue to send a heartbeat to the connection
 async fn poll_heartbeat(
     interval: u64,
     tx: Sender<Message>,
