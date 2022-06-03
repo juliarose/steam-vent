@@ -229,6 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_of_game_heartbeat_seconds = connection.send_heartbeat().await?;
     let (tx, rx) = mpsc::channel::<Message>(10);
     let heartbeat_tx = tx.clone();
+    // state that can be shared across tasks
     let state = Arc::new(RwLock::new(state));
     let handles = vec![
         poll_heartbeat(out_of_game_heartbeat_seconds, heartbeat_tx),
