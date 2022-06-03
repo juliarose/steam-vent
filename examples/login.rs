@@ -125,13 +125,10 @@ async fn handle_connection(
                     *count 
                 };
                 
-                match message.as_str() {
-                    "hello" => {
-                        let message = format!("hi #{}", count);
-                        
-                        connection.chat_message(steamid, message).await?;
-                    },
-                    _ => {},
+                if message == "hello" {
+                    let message = format!("hi #{}", count);
+                    
+                    connection.chat_message(steamid, message).await?;
                 }
             },
             Message::PersonaName(persona_name) => {
