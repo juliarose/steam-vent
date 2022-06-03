@@ -160,7 +160,7 @@ async fn handle_connection(
                             panic!("Error reconnecting: {}", error);
                         },
                         Err(error) => {
-                            println!("Error reconnection: {}", error);
+                            println!("Error reconnecting: {}", error);
                             println!("Trying again...");
                             retries -= 1;
                             async_std::task::sleep(std::time::Duration::from_secs(10)).await;
