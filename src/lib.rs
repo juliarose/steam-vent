@@ -1,5 +1,4 @@
 pub mod connection;
-pub mod eresult;
 pub mod enums;
 pub mod message;
 pub mod net;

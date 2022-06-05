@@ -191,6 +191,7 @@ impl Connection {
         Ok(rx)
     }
     
+    /// Sends a heartbeat to keep the connection alive.
     pub async fn send_heartbeat(
         &mut self,
     ) -> Result<u64> {
@@ -199,6 +200,7 @@ impl Connection {
         Ok(self.session.out_of_game_heartbeat_seconds as u64)
     }
     
+    /// Sends message to disconnect connection.
     pub async fn disconnect(
         &mut self,
     ) -> Result<()> {
@@ -207,6 +209,7 @@ impl Connection {
         Ok(())
     }
     
+    /// Adds a friend.
     pub async fn add_friend(
         &mut self,
         friend: SteamID,
@@ -220,6 +223,7 @@ impl Connection {
         Ok(job_id)
     }
     
+    /// Removes a friend.
     pub async fn remove_friend(
         &mut self,
         friend: SteamID,
@@ -233,6 +237,7 @@ impl Connection {
         Ok(job_id)
     }
     
+    /// Blocks a user.
     pub async fn block_user(
         &mut self,
         steamid: SteamID,
@@ -247,6 +252,7 @@ impl Connection {
         Ok(job_id)
     }
     
+    /// Unblocks a user.
     pub async fn unblock_user(
         &mut self,
         steamid: SteamID,
@@ -261,6 +267,7 @@ impl Connection {
         Ok(job_id)
     }
     
+    /// Sets the persona state e.g. "Online".
     pub async fn set_persona_state(
         &mut self,
         persona_state: EPersonaState,
@@ -272,6 +279,7 @@ impl Connection {
         self.send(req).await
     }
     
+    /// Sets the persona name.
     pub async fn set_persona_name(
         &mut self,
         persona_name: String,
@@ -283,10 +291,12 @@ impl Connection {
         self.send(req).await
     }
     
+    /// Requests the message to authenticate your web session (cookies and sessionid).
     pub async fn request_web_api_authenticate_user_nonce(&mut self) -> Result<u64> {
         self.send(CMsgClientRequestWebAPIAuthenticateUserNonce::new()).await
     }
     
+    /// Sends a chat message to the given user.
     pub async fn chat_message(
         &mut self,
         friend: SteamID,
@@ -303,6 +313,7 @@ impl Connection {
         self.service_method(req).await
     }
     
+    /// Sets games played. Can be any number of games.
     pub async fn set_games_played(
         &mut self,
         games: &[u64],

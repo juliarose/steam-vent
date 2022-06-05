@@ -1,5 +1,5 @@
 use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
-use crate::eresult::EResult;
+use crate::enums::eresult::EResult;
 use crate::proto::{
     enums_clientserver::EMsg,
     steammessages_clientserver_login::CMsgClientLogonResponse,

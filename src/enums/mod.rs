@@ -1,8 +1,9 @@
 // mod euniverse;
 // mod echatentrytype;
-mod epersonastate;
 // mod eaccounttype;
-mod efriendrelationship;
+pub mod epersonastate;
+pub mod eresult;
+pub mod efriendrelationship;
 // mod eaccountflags;
 // mod eclanpermission;
 // mod echatpermission;
