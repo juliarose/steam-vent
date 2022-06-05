@@ -1,5 +1,5 @@
 use crate::{
-    message::{flatten_multi, NetMessage, ServiceMethodResponseMessage},
+    message::{flatten_multi, SetIgnoreFriend, NetMessage, ServiceMethodResponseMessage},
     net::{connect, NetworkError, RawNetMessage},
     service_method::ServiceMethodRequest,
     session::{anonymous, logged_in, Session, SessionError},
@@ -41,6 +41,8 @@ use crate::proto::{
         CFriendMessages_SendMessage_Response,
     },
 };
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use bytes::{Buf, BufMut, BytesMut};
 
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
@@ -214,6 +216,34 @@ impl Connection {
         
         req.set_steamid_to_add(u64::from(friend));
         
+        let job_id = self.send(req).await?;
+        
+        Ok(job_id)
+    }
+    
+    pub async fn block_user(
+        &mut self,
+        steamid: SteamID,
+    ) -> Result<u64> {
+        let req = SetIgnoreFriend {
+            steamid: u64::from(self.session.steam_id),
+            steamid_other: u64::from(steamid),
+            block: 1,
+        };
+        let job_id = self.send(req).await?;
+        
+        Ok(job_id)
+    }
+    
+    pub async fn unblock_user(
+        &mut self,
+        steamid: SteamID,
+    ) -> Result<u64> {
+        let req = SetIgnoreFriend {
+            steamid: u64::from(self.session.steam_id),
+            steamid_other: u64::from(steamid),
+            block: 0,
+        };
         let job_id = self.send(req).await?;
         
         Ok(job_id)

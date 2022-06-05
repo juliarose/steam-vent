@@ -230,10 +230,8 @@ impl RawNetMessage {
         let kind = reader
             .read_i32::<LittleEndian>()
             .map_err(|_| NetworkError::InvalidHeader)?;
-
         let is_protobuf = kind < 0;
         let kind = kind & (!PROTO_MASK) as i32;
-
         let kind = match steam_vent_proto::enums_clientserver::EMsg::from_i32(kind) {
             Some(kind) => kind,
             None => return Err(NetworkError::InvalidMessageKind(kind)),
@@ -261,7 +259,7 @@ impl RawNetMessage {
             header_buffer,
         })
     }
-
+    
     pub fn from_message<T: NetMessage>(mut header: NetMessageHeader, message: T) -> Result<Self> {
         debug!("writing raw {:?} message", T::KIND);
 

@@ -110,6 +110,26 @@ pub trait NetMessage: Sized + Debug {
 }
 
 #[derive(Debug, BinRead)]
+pub struct SetIgnoreFriend {
+    pub steamid: u64,
+    pub steamid_other: u64,
+    pub block: u8,
+}
+
+impl NetMessage for SetIgnoreFriend {
+    const KIND: EMsg = EMsg::k_EMsgClientSetIgnoreFriend;
+
+    fn write_body<W: Write>(&self, mut writer: W) -> Result<(), std::io::Error> {
+        trace!("writing body of {:?} message", Self::KIND);
+        writer.write_u64::<LittleEndian>(self.steamid)?;
+        writer.write_u64::<LittleEndian>(self.steamid_other)?;
+        writer.write_u8(self.block)?;
+        
+        Ok(())
+    }
+}
+
+#[derive(Debug, BinRead)]
 pub struct ChannelEncryptRequest {
     pub protocol: u32,
     pub universe: u32,
