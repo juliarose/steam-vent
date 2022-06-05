@@ -110,13 +110,13 @@ pub trait NetMessage: Sized + Debug {
 }
 
 #[derive(Debug, BinRead)]
-pub struct SetIgnoreFriend {
+pub struct ClientSetIgnoreFriend {
     pub steamid: u64,
     pub steamid_other: u64,
     pub block: u8,
 }
 
-impl NetMessage for SetIgnoreFriend {
+impl NetMessage for ClientSetIgnoreFriend {
     const KIND: EMsg = EMsg::k_EMsgClientSetIgnoreFriend;
 
     fn write_body<W: Write>(&self, mut writer: W) -> Result<(), std::io::Error> {
