@@ -284,9 +284,9 @@ impl Connection {
         &mut self,
         persona_name: String,
     ) -> Result<u64> {
-        let mut req = CMsgClientAccountInfo::new();
+        let mut req = CMsgClientChangeStatus::new();
         
-        req.set_persona_name(persona_name);
+        req.set_player_name(persona_name);
         
         self.send(req).await
     }
