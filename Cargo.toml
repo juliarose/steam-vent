@@ -29,6 +29,9 @@ bytebuffer-new = "0.2"
 rust-crypto = "0.2"
 rand = "0.8"
 
+[features]
+tf2 = []
+
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread"] }
 env_logger = "0.8"
