@@ -5,4 +5,4 @@ pub mod response;
 pub mod request;
 pub mod proto;
 
-pub use team_fortress_2::{TeamFortress2, };
+pub use team_fortress_2::TeamFortress2;
