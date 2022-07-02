@@ -4,7 +4,7 @@ use crate::{
     service_method::ServiceMethodRequest,
     session::{anonymous, logged_in, Session, SessionError},
     enums::EPersonaState,
-    game_coordinator::ClientToGCMessage,
+    gc::ClientToGCMessage,
     login,
 };
 use std::{sync::Arc, time::Duration};

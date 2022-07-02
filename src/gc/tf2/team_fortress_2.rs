@@ -1,11 +1,10 @@
 use protobuf::{RepeatedField, Message};
 use crate::{
-    gc::App,
+    gc::{App, ClientToGCMessage},
     net::PROTO_MASK,
     net::NetworkError,
     connection::Connection,
     proto::steammessages_base::CMsgProtoBufHeader,
-    game_coordinator::ClientToGCMessage,
 };
 use super::proto::{
     econ_gcmessages::EGCItemMsg,
