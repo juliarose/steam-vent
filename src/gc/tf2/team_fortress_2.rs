@@ -1,6 +1,6 @@
 use protobuf::{RepeatedField, Message};
 use crate::{
-    gc::app::App,
+    gc::App,
     net::PROTO_MASK,
     net::NetworkError,
     connection::Connection,
