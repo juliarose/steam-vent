@@ -31,7 +31,6 @@ use crate::proto::{
         CMsgClientGamesPlayed_GamePlayed,
     },
     steammessages_clientserver_login::{
-        CMsgClientAccountInfo,
         CMsgClientHeartBeat,
         CMsgClientLogOff,
         CMsgClientLogon,
@@ -46,7 +45,7 @@ use crate::proto::{
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
 
-const SERVER_IP: &str = "162.254.196.67:27017";
+const SERVER_IP: &str = "155.133.226.75:27018";
 
 pub struct Connection {
     pub session: Session,
