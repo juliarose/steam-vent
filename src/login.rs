@@ -6,13 +6,21 @@ use std::{
     io::prelude::*,
     path::{Path, PathBuf},
 };
-use crypto::{digest::Digest, sha1::Sha1};
+use sha1::{Sha1, Digest};
+
 use bytebuffer_new::{ByteBuffer, Endian};
 use rand::Rng;
 use crate::proto::{
     steammessages_base::CMsgIPAddress,
     steammessages_clientserver_login::CMsgClientLogon,
 };
+
+fn create_sha1(input: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha1::new();
+    
+    hasher.update(input);
+    hasher.finalize().to_vec()
+}
 
 pub fn create_logon(
     account_name: String,
@@ -51,10 +59,9 @@ fn get_random_machine_id() -> Vec<u8> {
         }
         
         fn create_sha1_str(input: &str) -> String {
-            let mut hasher = Sha1::new();
-            
-            hasher.input_str(input);
-            hasher.result_str()
+            let bytes = create_sha1(input.as_bytes());
+
+            String::from_utf8(bytes).unwrap()
         }
         
         let mut buffer = ByteBuffer::new();
