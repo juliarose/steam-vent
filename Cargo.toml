@@ -18,7 +18,7 @@ byteorder = "1"
 protobuf = "=2.24.1"
 bytemuck = { version = "1", features = ["derive"] }
 crc = "2"
-flate2 = "1"
+flate2 = "1.0"
 log = "0.4"
 steamid-ng = "1"
 futures-sink = "0.3"
