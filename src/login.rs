@@ -15,6 +15,18 @@ use crate::proto::{
     steammessages_clientserver_login::CMsgClientLogon,
 };
 
+fn bytes_to_hex_string(input: &[u8]) -> String {
+    use std::fmt::Write;
+
+    let mut s = String::with_capacity(2 * input.len());
+    
+    for byte in input {
+        write!(s, "{:02X}", byte).unwrap();
+    }
+
+    s
+}
+
 fn create_sha1(input: &[u8]) -> Vec<u8> {
     let mut hasher = Sha1::new();
     
@@ -59,9 +71,9 @@ fn get_random_machine_id() -> Vec<u8> {
         }
         
         fn create_sha1_str(input: &str) -> String {
-            let bytes = create_sha1(input.as_bytes());
+            let sha_bytes = create_sha1(input.as_bytes());
 
-            String::from_utf8(bytes).unwrap()
+            bytes_to_hex_string(&sha_bytes)
         }
         
         let mut buffer = ByteBuffer::new();
@@ -164,5 +176,20 @@ fn save_file(
             
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn creates_a_machine_id() {
+        let machine_id = get_random_machine_id();
+
+        println!("{:?}", String::from_utf8_lossy(&machine_id));
+
+        assert!(!machine_id.is_empty());
     }
 }
