@@ -19,7 +19,7 @@ fn bytes_to_hex_string(input: &[u8]) -> String {
     use std::fmt::Write;
 
     let mut s = String::with_capacity(2 * input.len());
-    
+
     for byte in input {
         write!(s, "{:02X}", byte).unwrap();
     }
@@ -187,9 +187,7 @@ mod tests {
     #[test]
     fn creates_a_machine_id() {
         let machine_id = get_random_machine_id();
-
-        println!("{:?}", String::from_utf8_lossy(&machine_id));
-
+        
         assert!(!machine_id.is_empty());
     }
 }
