@@ -6,13 +6,33 @@ use std::{
     io::prelude::*,
     path::{Path, PathBuf},
 };
-use crypto::{digest::Digest, sha1::Sha1};
+use sha1::{Sha1, Digest};
+
 use bytebuffer_new::{ByteBuffer, Endian};
 use rand::Rng;
 use crate::proto::{
     steammessages_base::CMsgIPAddress,
     steammessages_clientserver_login::CMsgClientLogon,
 };
+
+fn bytes_to_hex_string(input: &[u8]) -> String {
+    use std::fmt::Write;
+
+    let mut s = String::with_capacity(2 * input.len());
+
+    for byte in input {
+        write!(s, "{:02X}", byte).unwrap();
+    }
+
+    s
+}
+
+fn create_sha1(input: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha1::new();
+    
+    hasher.update(input);
+    hasher.finalize().to_vec()
+}
 
 pub fn create_logon(
     account_name: String,
@@ -51,10 +71,9 @@ fn get_random_machine_id() -> Vec<u8> {
         }
         
         fn create_sha1_str(input: &str) -> String {
-            let mut hasher = Sha1::new();
-            
-            hasher.input_str(input);
-            hasher.result_str()
+            let sha_bytes = create_sha1(input.as_bytes());
+
+            bytes_to_hex_string(&sha_bytes)
         }
         
         let mut buffer = ByteBuffer::new();
@@ -157,5 +176,18 @@ fn save_file(
             
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn creates_a_machine_id() {
+        let machine_id = get_random_machine_id();
+        
+        assert!(!machine_id.is_empty());
     }
 }

@@ -18,7 +18,7 @@ byteorder = "1"
 protobuf = "=2.24.1"
 bytemuck = { version = "1", features = ["derive"] }
 crc = "2"
-flate2 = "1"
+flate2 = "1.0"
 log = "0.4"
 steamid-ng = "1"
 futures-sink = "0.3"
@@ -26,7 +26,7 @@ futures-util = { version = "0.3", features = ["sink"] }
 dashmap = "5"
 num_enum = "0.5"
 bytebuffer-new = "0.2"
-rust-crypto = "0.2"
+sha-1 = "^0.10"
 rand = "0.8"
 
 [features]
