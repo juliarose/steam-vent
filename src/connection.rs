@@ -21,10 +21,7 @@ use tokio::{
 use tokio_stream::{Stream, StreamExt};
 use protobuf::RepeatedField;
 use crate::proto::{
-    steammessages_player_steamclient::{
-        CPlayer_GetGameBadgeLevels_Request,
-        CPlayer_GetGameBadgeLevels_Response,
-    },
+    steammessages_player_steamclient::CPlayer_GetGameBadgeLevels_Request,
     steammessages_clientserver_friends::{
         CMsgClientAddFriend,
         CMsgClientChangeStatus,
