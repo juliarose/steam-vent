@@ -200,6 +200,8 @@ impl Connection {
     ) -> Result<oneshot::Receiver<Result<T>>>
     where
         <Msg as ServiceMethodRequest>::Response: Send + Sized,
+        // I can't quite figure out how to do this without using static lifetimes
+        // this will have to do for now
         F: FnOnce(Msg::Response) -> T + Send + Sized + 'static,
         T: Send + Sync + Sized + 'static,
     {
@@ -228,14 +230,7 @@ impl Connection {
                 &filter,
                 job_id
             ).await;
-            let _ = tx.send(match response {
-                Ok(response) => {
-                    let res = op(response);
-                    
-                    Ok(res)
-                },
-                Err(error) => Err(error),
-            });
+            let _ = tx.send(response.map(op));
         });
         
         // this could return the JoinHandle or a receiver
