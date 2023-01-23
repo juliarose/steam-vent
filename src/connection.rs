@@ -21,6 +21,10 @@ use tokio::{
 use tokio_stream::{Stream, StreamExt};
 use protobuf::RepeatedField;
 use crate::proto::{
+    steammessages_player_steamclient::{
+        CPlayer_GetGameBadgeLevels_Request,
+        CPlayer_GetGameBadgeLevels_Response,
+    },
     steammessages_clientserver_friends::{
         CMsgClientAddFriend,
         CMsgClientChangeStatus,
@@ -153,6 +157,7 @@ impl Connection {
         Ok(id)
     }
     
+    /// Sends a service method.
     pub async fn service_method<Msg: ServiceMethodRequest>(
         &mut self,
         msg: Msg,
@@ -183,6 +188,57 @@ impl Connection {
                 job_id
             ).await;
             let _ = tx.send(response);
+        });
+        
+        // this could return the JoinHandle or a receiver
+        // either one works, I guess?
+        Ok(rx)
+    }
+    
+    /// Sends a service method, mapping the response with a function.
+    async fn map_service_method<Msg: ServiceMethodRequest, T, F>(
+        &mut self,
+        msg: Msg,
+        op: F,
+    ) -> Result<oneshot::Receiver<Result<T>>>
+    where
+        <Msg as ServiceMethodRequest>::Response: Send + Sized,
+        F: FnOnce(Msg::Response) -> T + Send + Sized + 'static,
+        T: Send + Sync + Sized + 'static,
+    {
+        async fn wait_for_response<Msg: ServiceMethodRequest>(
+            filter: &MessageFilter,
+            job_id: u64,
+        ) -> Result<Msg::Response> {
+            let raw_message = timeout(Duration::from_secs(10), filter.on_job_id(job_id))
+                .await
+                .map_err(|_| NetworkError::Timeout)?
+                .map_err(|_| NetworkError::Timeout)?;            
+            let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
+            
+            message.into_response::<Msg>()
+        }
+        
+        let job_id = self.send(msg).await?;
+        let filter = Arc::clone(&self.filter);
+        let (
+            tx,
+            rx,
+        ) = oneshot::channel::<Result<T>>();
+        
+        spawn(async move {
+            let response = wait_for_response::<Msg>(
+                &filter,
+                job_id
+            ).await;
+            let _ = tx.send(match response {
+                Ok(response) => {
+                    let res = op(response);
+                    
+                    Ok(res)
+                },
+                Err(error) => Err(error),
+            });
         });
         
         // this could return the JoinHandle or a receiver
@@ -310,6 +366,16 @@ impl Connection {
         req.set_contains_bbcode(false);
         
         self.service_method(req).await
+    }
+    
+    pub async fn get_steam_level(
+        &mut self,
+    ) -> Result<oneshot::Receiver<Result<u32>>> {
+        let mut message = CPlayer_GetGameBadgeLevels_Request::new();
+        
+        message.set_appid(440);
+        
+        self.map_service_method(message, |response| response.get_player_level()).await
     }
     
     /// Sets games played. Can be any number of games.
