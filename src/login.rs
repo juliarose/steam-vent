@@ -37,7 +37,7 @@ fn create_sha1(input: &[u8]) -> Vec<u8> {
 pub fn create_logon(
     account_name: String,
     password: String,
-    machine_id_filepath: &PathBuf,
+    machine_id_filepath: Option<&PathBuf>,
 ) -> CMsgClientLogon {
     let mut logon = CMsgClientLogon::new();
     
@@ -114,19 +114,24 @@ fn get_random_machine_id() -> Vec<u8> {
     )
 }
 
-fn get_machine_id(filepath: &PathBuf) -> Vec<u8> {
-    if let Ok(machine_id) = get_machine_id_from_file(filepath) {
-        machine_id
-    } else {
-        let machine_id = get_random_machine_id();
-        // It should be OK if this panics
-        save_file(
+fn get_machine_id(filepath: Option<&PathBuf>) -> Vec<u8> {
+    if let Some(filepath) = filepath {
+        if let Ok(machine_id) = get_machine_id_from_file(filepath) {
+            return machine_id;
+        }
+    }
+    
+    let machine_id = get_random_machine_id();
+    
+    if let Some(filepath) = filepath {
+        // we don't care if this fails
+        let _ = save_file(
             filepath,
             &machine_id,
-        ).unwrap();
-        
-        machine_id
+        );
     }
+    
+    machine_id
 }
 
 fn get_machine_id_from_file(filepath: &PathBuf) -> std::io::Result<Vec<u8>> {
