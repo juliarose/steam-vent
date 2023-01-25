@@ -4,7 +4,7 @@
 use std::{
     fs::File,
     io::prelude::*,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use sha1::{Sha1, Digest};
 
@@ -37,6 +37,7 @@ fn create_sha1(input: &[u8]) -> Vec<u8> {
 pub fn create_logon(
     account_name: String,
     password: String,
+    machine_id_filepath: &PathBuf,
 ) -> CMsgClientLogon {
     let mut logon = CMsgClientLogon::new();
     
@@ -51,7 +52,7 @@ pub fn create_logon(
     ip.set_v4(0);
     logon.set_obfuscated_private_ip(ip);
     logon.set_client_language(String::from("english"));
-    logon.set_machine_id(get_machine_id());
+    logon.set_machine_id(get_machine_id(machine_id_filepath));
     logon.set_machine_name(String::new());
     logon.set_steamguard_dont_remember_computer(false);
     logon.set_chat_mode(2);
@@ -113,14 +114,14 @@ fn get_random_machine_id() -> Vec<u8> {
     )
 }
 
-fn get_machine_id() -> Vec<u8> {
-    if let Ok(machine_id) = get_machine_id_from_file() {
+fn get_machine_id(filepath: &PathBuf) -> Vec<u8> {
+    if let Ok(machine_id) = get_machine_id_from_file(filepath) {
         machine_id
     } else {
         let machine_id = get_random_machine_id();
         // It should be OK if this panics
         save_file(
-            get_filepath("machineid"),
+            filepath,
             &machine_id,
         ).unwrap();
         
@@ -128,21 +129,7 @@ fn get_machine_id() -> Vec<u8> {
     }
 }
 
-fn logins_path() -> PathBuf {
-    let rootdir = env!("CARGO_MANIFEST_DIR");
-    let filepath = Path::new(rootdir).join("logins");
-    
-    filepath
-}
-
-fn get_filepath(
-    filename: &str,
-) -> PathBuf {
-    logins_path().join(filename)
-}
-
-fn get_machine_id_from_file() -> std::io::Result<Vec<u8>> {
-    let filepath = get_filepath("machineid");
+fn get_machine_id_from_file(filepath: &PathBuf) -> std::io::Result<Vec<u8>> {
     let mut file = File::open(filepath)?;
     let mut data: Vec<u8> = Vec::new();
     
@@ -153,10 +140,9 @@ fn get_machine_id_from_file() -> std::io::Result<Vec<u8>> {
 
 /// Performs a basic atomic file write.
 fn save_file(
-    filepath: PathBuf,
+    filepath: &PathBuf,
     data: &[u8],
 ) -> std::io::Result<()> {
-    let _ = std::fs::create_dir(logins_path());
     let mut temp_filepath = filepath.clone();
     
     temp_filepath.set_extension(".temp");
