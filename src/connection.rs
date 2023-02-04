@@ -357,7 +357,7 @@ impl Connection {
         // EChatEntryType::ChatMsg
         req.set_chat_entry_type(1);
         req.set_message(message);
-        req.set_contains_bbcode(false);
+        req.set_contains_bbcode(true);
         
         self.service_method(req).await
     }
