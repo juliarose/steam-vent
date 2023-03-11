@@ -212,7 +212,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut credentials = Connection::default_login_message(
         account_name,
         password,
-        None,
     );
     
     credentials.set_two_factor_code(two_factor_code);

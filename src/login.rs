@@ -1,13 +1,8 @@
 // todo I'd like this to require less external modules
 // bytebuffer_new can probably be accomplished with bytes::BytesMut
 
-use std::{
-    fs::File,
-    io::prelude::*,
-    path::PathBuf,
-};
-use sha1::{Sha1, Digest};
 
+use sha1::{Sha1, Digest};
 use bytebuffer_new::{ByteBuffer, Endian};
 use rand::Rng;
 use crate::proto::{
@@ -37,7 +32,6 @@ fn create_sha1(input: &[u8]) -> Vec<u8> {
 pub fn create_logon(
     account_name: String,
     password: String,
-    machine_id_filepath: Option<&PathBuf>,
 ) -> CMsgClientLogon {
     let mut logon = CMsgClientLogon::new();
     
@@ -52,7 +46,7 @@ pub fn create_logon(
     ip.set_v4(0);
     logon.set_obfuscated_private_ip(ip);
     logon.set_client_language(String::from("english"));
-    logon.set_machine_id(get_machine_id(machine_id_filepath));
+    logon.set_machine_id(get_random_machine_id());
     logon.set_machine_name(String::new());
     logon.set_steamguard_dont_remember_computer(false);
     logon.set_chat_mode(2);
@@ -112,62 +106,6 @@ fn get_random_machine_id() -> Vec<u8> {
         &get_random_str(),
         &get_random_str(),
     )
-}
-
-fn get_machine_id(filepath: Option<&PathBuf>) -> Vec<u8> {
-    if let Some(filepath) = filepath {
-        if let Ok(machine_id) = get_machine_id_from_file(filepath) {
-            return machine_id;
-        }
-    }
-    
-    let machine_id = get_random_machine_id();
-    
-    if let Some(filepath) = filepath {
-        // we don't care if this fails
-        let _ = save_file(
-            filepath,
-            &machine_id,
-        );
-    }
-    
-    machine_id
-}
-
-fn get_machine_id_from_file(filepath: &PathBuf) -> std::io::Result<Vec<u8>> {
-    let mut file = File::open(filepath)?;
-    let mut data: Vec<u8> = Vec::new();
-    
-    file.read_to_end(&mut data)?;
-    
-    Ok(data)
-}
-
-/// Performs a basic atomic file write.
-fn save_file(
-    filepath: &PathBuf,
-    data: &[u8],
-) -> std::io::Result<()> {
-    let mut temp_filepath = filepath.clone();
-    
-    temp_filepath.set_extension(".temp");
-    
-    let mut temp_file = File::create(&temp_filepath)?;
-    
-    match temp_file.write_all(data) {
-        Ok(_) => {
-            temp_file.flush()?;
-            std::fs::rename(temp_filepath, filepath)?;
-
-            Ok(())
-        },
-        Err(error) => {
-            // something went wrong writing to this file...
-            std::fs::remove_file(&temp_filepath)?;
-            
-            Err(error)
-        }
-    }
 }
 
 #[cfg(test)]

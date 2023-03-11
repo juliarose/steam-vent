@@ -61,12 +61,10 @@ impl Connection {
     pub fn default_login_message(
         account_name: String,
         password: String,
-        machine_id_filepath: Option<&PathBuf>,
     ) -> CMsgClientLogon {
         login::create_logon(
             account_name,
             password,
-            machine_id_filepath,
         )
     }
     
