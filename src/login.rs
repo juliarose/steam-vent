@@ -32,7 +32,7 @@ fn create_sha1(input: &[u8]) -> Vec<u8> {
 }
 
 /// Sets the `machine_id` using contents from file. If no file exists, one will be created using
-/// the `machine_id` from `credetials` for future use.
+/// the `machine_id` from `credentials` for future use.
 pub fn set_machine_id_from_file(
     credentials: &mut CMsgClientLogon,
     filepath: &PathBuf,

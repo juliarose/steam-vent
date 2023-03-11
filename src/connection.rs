@@ -68,6 +68,15 @@ impl Connection {
         )
     }
     
+    /// Sets the `machine_id` using contents from file. If no file exists, one will be created using
+    /// the `machine_id` from `credentials` for future use.
+    pub fn set_machine_id_from_file(
+        credentials: &mut CMsgClientLogon,
+        filepath: &PathBuf,
+    ) -> std::io::Result<()> {
+        login::set_machine_id_from_file(credentials, filepath)
+    }
+    
     pub async fn anonymous() -> Result<Login, SessionError> {
         let (read, mut write) = connect(SERVER_IP).await?;
         let mut read = flatten_multi(read);
