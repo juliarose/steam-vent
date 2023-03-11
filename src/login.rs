@@ -1,7 +1,9 @@
 // todo I'd like this to require less external modules
 // bytebuffer_new can probably be accomplished with bytes::BytesMut
 
-
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::PathBuf;
 use sha1::{Sha1, Digest};
 use bytebuffer_new::{ByteBuffer, Endian};
 use rand::Rng;
@@ -27,6 +29,64 @@ fn create_sha1(input: &[u8]) -> Vec<u8> {
     
     hasher.update(input);
     hasher.finalize().to_vec()
+}
+
+/// Sets the `machine_id` using contents from file. If no file exists, one will be created using
+/// the `machine_id` from `credetials` for future use.
+pub fn set_machine_id_from_file(
+    credentials: &mut CMsgClientLogon,
+    filepath: &PathBuf,
+) -> std::io::Result<()> {
+    /// Performs a basic atomic file write.
+    fn save_file(
+        filepath: &PathBuf,
+        data: &[u8],
+    ) -> std::io::Result<()> {
+        let mut temp_filepath = filepath.clone();
+        
+        temp_filepath.set_extension(".temp");
+        
+        let mut temp_file = File::create(&temp_filepath)?;
+        
+        match temp_file.write_all(data) {
+            Ok(_) => {
+                temp_file.flush()?;
+                std::fs::rename(temp_filepath, filepath)?;
+                Ok(())
+            },
+            Err(error) => {
+                // something went wrong writing to this file...
+                std::fs::remove_file(&temp_filepath)?;
+                Err(error)
+            }
+        }
+    }
+    
+    fn save_machine_id_to_file(
+        credentials: &CMsgClientLogon,
+        filepath: &PathBuf,
+    ) -> std::io::Result<()> {
+        // don't overwrite
+        if filepath.exists() {
+            return Ok(());
+        }
+        
+        save_file(filepath, credentials.get_machine_id())?;
+        Ok(())
+    }
+    
+    // none currently exists - save the randomly generated one to file
+    if !filepath.exists() {
+        save_machine_id_to_file(credentials, filepath)?;
+        return Ok(())
+    }
+    
+    let mut file = File::open(filepath)?;
+    let mut data: Vec<u8> = Vec::new();
+    
+    file.read_to_end(&mut data)?;
+    credentials.set_machine_id(data);
+    Ok(())
 }
 
 pub fn create_logon(
