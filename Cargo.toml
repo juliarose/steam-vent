@@ -12,7 +12,7 @@ tokio-util = { version = "0.6", features = ["codec"] }
 tokio-stream = "0.1"
 binread = "2"
 binwrite = "0.2"
-thiserror = "1"
+thiserror = "^1"
 bytes = "1"
 byteorder = "1"
 protobuf = "=2.24.1"
@@ -28,6 +28,7 @@ num_enum = "0.5"
 bytebuffer-new = "0.2"
 sha-1 = "^0.10"
 rand = "0.8"
+steam-api = { git = "https://github.com/juliarose/steam-api", version = "0.1.0" }
 
 [features]
 tf2 = []
@@ -36,6 +37,8 @@ tf2 = []
 tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread"] }
 env_logger = "0.8"
 async-std = "1.11"
+dotenv = "0.15.0"
+another-steam-totp = "0.2.1" 
 
 [workspace]
 

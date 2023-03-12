@@ -1,11 +1,9 @@
 use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
 use crate::enums::eresult::EResult;
-use crate::proto::{
-    enums_clientserver::EMsg,
-    steammessages_clientserver_login::CMsgClientLogonResponse,
-    steammessages_base::CMsgIPAddress,
-    steammessages_clientserver_login::CMsgClientLogon,
-};
+use crate::proto::enums_clientserver::EMsg;
+use crate::proto::steammessages_clientserver_login::CMsgClientLogonResponse;
+use crate::proto::steammessages_base::CMsgIPAddress;
+use crate::proto::steammessages_clientserver_login::CMsgClientLogon;
 use futures_util::{Sink, SinkExt};
 use steamid_ng::{AccountType, Instance, SteamID, Universe};
 use thiserror::Error;
@@ -30,7 +28,6 @@ pub struct Session {
 }
 
 impl Session {
-    
     pub fn header(&mut self) -> NetMessageHeader {
         self.last_source_id += 1;
         NetMessageHeader {
@@ -44,42 +41,32 @@ impl Session {
     }
 }
 
-pub async fn anonymous<
-    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
-    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
->(
+pub async fn anonymous<Read, Write>(
     read: &mut Read,
     write: &mut Write,
-) -> Result<Session> {
+) -> Result<Session>
+where
+    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
+    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
+{
     let logon = get_anon_login_msg();
     let steamid = SteamID::new(0, Instance::All, AccountType::AnonUser, Universe::Public);
     
-    login(
-        read,
-        write,
-        &steamid,
-        logon
-    )
-    .await
+    login(read, write, &steamid, logon).await
 }
 
-pub async fn logged_in<
-    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
-    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
->(
+pub async fn logged_in<Read, Write>(
     read: &mut Read,
     write: &mut Write,
     logon: CMsgClientLogon,
-) -> Result<Session> {
+) -> Result<Session>
+where
+    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
+    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
+{
     let steamid = SteamID::new(0, Instance::Desktop, AccountType::Individual, Universe::Public);
     
-    login(
-        read,
-        write,
-        &steamid,
-        logon
-    )
-    .await
+    login(read, write, &steamid, logon).await
 }
 
 fn get_anon_login_msg() -> CMsgClientLogon {
@@ -101,15 +88,16 @@ fn get_anon_login_msg() -> CMsgClientLogon {
     logon
 }
 
-pub async fn login<
-    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
-    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
->(
+pub async fn login<Read, Write>(
     read: &mut Read,
     write: &mut Write,
     steamid: &SteamID,
     logon: CMsgClientLogon,
-) -> Result<Session> {
+) -> Result<Session>
+where
+    Read: Stream<Item = Result<RawNetMessage, NetworkError>> + Unpin,
+    Write: Sink<RawNetMessage, Error = NetworkError> + Unpin,
+{
     let header = NetMessageHeader {
         session_id: 0,
         source_job_id: u64::MAX,

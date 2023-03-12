@@ -8,11 +8,12 @@ use crate::{
     login,
 };
 use std::{sync::Arc, time::Duration, path::PathBuf};
+use bytes::BytesMut;
 use steamid_ng::SteamID;
 use dashmap::DashMap;
 use futures_sink::Sink;
 use futures_util::SinkExt;
-use steam_vent_proto::enums_clientserver::EMsg;
+use steam_vent_proto::{enums_clientserver::EMsg, steammessages_clientserver_login::CMsgClientAccountInfo};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     task::spawn,
@@ -42,6 +43,7 @@ use crate::proto::{
         CFriendMessages_SendMessage_Response,
     },
 };
+use steam_api::SteamAPI;
 
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
@@ -103,6 +105,24 @@ impl Connection {
             filter: Arc::new(filter),
             write: Box::new(write),
         }, rest))
+    }
+    
+    /// Calls the web API method to authenticate the current user.
+    pub async fn web_api_authenticate(
+        &self,
+        nonce: &str,
+    ) -> Result<(String, Vec<String>), steam_api::error::Error> {
+        let session_key = crate::crypto::generate_session_key(None);
+        let encrypted_nonce = crate::crypto::symmetric_encrypt(
+            BytesMut::from(nonce), 
+            &session_key.plain
+        );
+        
+        SteamAPI::new().authenticate_user(
+            self.session.steam_id, 
+            &session_key.encrypted[..], 
+            &encrypted_nonce[..]
+        ).await
     }
     
     pub async fn reconnect(
@@ -416,8 +436,8 @@ impl MessageFilter {
             job_id_filters: Default::default(),
             kind_filters: Default::default(),
         };
-
         let filter_send = filter.clone();
+        
         spawn(async move {
             while let Some(res) = source.next().await {
                 if let Ok(message) = res {
@@ -436,6 +456,7 @@ impl MessageFilter {
                 }
             }
         });
+        
         (filter, rx)
     }
 
@@ -444,7 +465,7 @@ impl MessageFilter {
         self.job_id_filters.insert(id, tx);
         rx
     }
-
+    
     pub fn on_kind(&self, kind: EMsg) -> broadcast::Receiver<RawNetMessage> {
         let tx = self
             .kind_filters
