@@ -13,7 +13,7 @@ use steamid_ng::SteamID;
 use dashmap::DashMap;
 use futures_sink::Sink;
 use futures_util::SinkExt;
-use steam_vent_proto::{enums_clientserver::EMsg, steammessages_clientserver_login::CMsgClientAccountInfo};
+use steam_vent_proto::enums_clientserver::EMsg;
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     task::spawn,
