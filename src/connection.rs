@@ -167,7 +167,7 @@ impl Connection {
         self.write.send(msg).await?;
         Ok(id)
     }
-
+    
     pub async fn send_response<Msg: NetMessage>(
         &mut self,
         msg: Msg,
@@ -189,35 +189,18 @@ impl Connection {
         msg: Msg,
     ) -> Result<oneshot::Receiver<Result<Msg::Response>>>
     where
-        <Msg as ServiceMethodRequest>::Response: Send + Sized
+        <Msg as ServiceMethodRequest>::Response: Send,
     {
-        async fn wait_for_response<Msg: ServiceMethodRequest>(
-            filter: &MessageFilter,
-            job_id: u64,
-        ) -> Result<Msg::Response> {
-            let raw_message = timeout(Duration::from_secs(10), filter.on_job_id(job_id))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|_| NetworkError::Timeout)?;            
-            let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
-            
-            message.into_response::<Msg>()
-        }
-        
         let job_id = self.send(msg).await?;
-        let filter = Arc::clone(&self.filter);
-        let (tx, rx) = oneshot::channel::<Result<Msg::Response>>();
+        let filter_rx = self.filter.on_job_id(job_id);
+        let (
+            tx,
+            rx,
+        ) = oneshot::channel::<Result<Msg::Response>>();
         
         spawn(async move {
-            let response = wait_for_response::<Msg>(
-                &filter,
-                job_id
-            ).await;
-            let _ = tx.send(response);
+            tx.send(wait_for_service_method_response::<Msg>(filter_rx).await).ok();
         });
-        
-        // this could return the JoinHandle or a receiver
-        // either one works, I guess?
         Ok(rx)
     }
     
@@ -228,42 +211,22 @@ impl Connection {
         op: F,
     ) -> Result<oneshot::Receiver<Result<T>>>
     where
-        <Msg as ServiceMethodRequest>::Response: Send + Sized,
-        // I can't quite figure out how to do this without using static lifetimes
-        // this will have to do for now
-        F: FnOnce(Msg::Response) -> T + Send + Sized + 'static,
-        T: Send + Sync + Sized + 'static,
+        <Msg as ServiceMethodRequest>::Response: Send,
+        T: Send + 'static,
+        F: FnOnce(Msg::Response) -> T + Send + 'static,
     {
-        async fn wait_for_response<Msg: ServiceMethodRequest>(
-            filter: &MessageFilter,
-            job_id: u64,
-        ) -> Result<Msg::Response> {
-            let raw_message = timeout(Duration::from_secs(10), filter.on_job_id(job_id))
-                .await
-                .map_err(|_| NetworkError::Timeout)?
-                .map_err(|_| NetworkError::Timeout)?;            
-            let message = raw_message.into_message::<ServiceMethodResponseMessage>()?;
-            
-            message.into_response::<Msg>()
-        }
-        
         let job_id = self.send(msg).await?;
-        let filter = Arc::clone(&self.filter);
+        let filter_rx = self.filter.on_job_id(job_id);
         let (
             tx,
             rx,
         ) = oneshot::channel::<Result<T>>();
         
         spawn(async move {
-            let response = wait_for_response::<Msg>(
-                &filter,
-                job_id
-            ).await;
-            let _ = tx.send(response.map(op));
+            let result = wait_for_service_method_response::<Msg>(filter_rx).await.map(op);
+            
+            tx.send(result).ok();
         });
-        
-        // this could return the JoinHandle or a receiver
-        // either one works, I guess?
         Ok(rx)
     }
     
@@ -421,6 +384,17 @@ impl Connection {
     }
 }
 
+async fn wait_for_service_method_response<Msg: ServiceMethodRequest>(
+    filter_rx: oneshot::Receiver<RawNetMessage>,
+) -> Result<Msg::Response> {
+    timeout(Duration::from_secs(10), filter_rx)
+        .await
+        .map_err(|_| NetworkError::Timeout)?
+        .map_err(|_| NetworkError::Timeout)?
+        .into_message::<ServiceMethodResponseMessage>()?
+        .into_response::<Msg>()
+}
+
 #[derive(Clone)]
 struct MessageFilter {
     job_id_filters: Arc<DashMap<u64, oneshot::Sender<RawNetMessage>>>,
@@ -459,7 +433,7 @@ impl MessageFilter {
         
         (filter, rx)
     }
-
+    
     pub fn on_job_id(&self, id: u64) -> oneshot::Receiver<RawNetMessage> {
         let (tx, rx) = oneshot::channel();
         self.job_id_filters.insert(id, tx);

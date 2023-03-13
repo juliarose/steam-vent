@@ -1,8 +1,8 @@
 /// Demonstrates logging in and replying to the chat message "hello".
 /// 
-/// This example could be much shorter but is comprehensive enough to demonstrate most of 
-/// everything that is needed for building a basic bot. I may change the module to do most of 
-/// the work for you as much of it is fairly redundant. For now this is how the module is consumed.
+/// This example could be much shorter but is comprehensive to demonstrate most of everything else 
+/// that is needed for building a basic bot. I may change the module to do most of the work for 
+/// you as much of it is fairly redundant. For now this is how the module is consumed.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -26,12 +26,169 @@ use steam_vent::connection::Connection;
 use steam_vent::message::ServiceMethodRequestMessage;
 use steam_vent::net::{NetworkError, RawNetMessage};
 use steam_vent::service_method::ServiceMethodRequest;
-use tokio::sync::mpsc::{self, Sender, Receiver};
-use sha1::{Sha1, Digest};
-use another_steam_totp::generate_auth_code;
+use tokio::sync::mpsc::Sender;
 
-struct Bot {
+// helper methods
+mod helpers {
+    use another_steam_totp::generate_auth_code;
+    use sha1::{Sha1, Digest};
+    use std::path::PathBuf;
+    use async_std::io::WriteExt;
+    use async_std::fs::File;
+    
+    pub fn prompt(message: &str) -> String {
+        println!("{}", message);
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        
+        input.trim().to_string()
+    }
+    
+    pub fn create_sha1(input: &[u8]) -> Vec<u8> {
+        let mut hasher = Sha1::new();
+        
+        hasher.update(input);
+        hasher.finalize().to_vec()
+    }
+    
+    pub fn get_two_factor_code() -> String {
+        if let Ok(shared_secret) = std::env::var("SHARED_SECRET") {    
+            // Generates the 5-character time-based one-time password using your shared_secret.
+            if let Ok(two_factor_code) = generate_auth_code(shared_secret, None) {
+                return two_factor_code;
+            }
+        }
+        
+        prompt("Two factor code?")
+    }
+    
+    pub async fn atomic_write<T: Into<PathBuf>>(
+        filepath: T,
+        bytes: &[u8],
+    ) -> std::io::Result<()> {
+        let filepath = filepath.into();
+        let mut temp_filepath = filepath.clone();
+        
+        temp_filepath.set_extension("tmp");
+        
+        let mut temp_file = File::create(&temp_filepath).await?;
+        
+        if let Err(error) = temp_file.write_all(bytes).await {
+            // something went wrong writing to this file...
+            async_std::fs::remove_file(&temp_filepath).await?;
+            return Err(error);
+        }
+        
+        temp_file.flush().await?;
+        async_std::fs::rename(&temp_filepath,&filepath).await?;
+        Ok(())
+    }
+}
+
+/// Spawned tasks
+mod tasks {
+    use super::{Bot, Message, MessageHandler, on_connection};
+    use std::sync::Arc;
+    use steam_vent::connection::Connection;
+    use steam_vent::net::{RawNetMessage, NetworkError};
+    use tokio::sync::mpsc::{self, Receiver, Sender};
+    use tokio::task::JoinHandle;
+    
+    // This will continue to send a heartbeat to the connection
+    pub async fn poll_heartbeat(
+        connection: &mut Connection,
+        tx: Sender<Message>,
+    ) -> Result<JoinHandle<()>, NetworkError> {
+        let interval = connection.send_heartbeat().await?;
+        
+        Ok(tokio::spawn(async move {
+            loop {
+                async_std::task::sleep(std::time::Duration::from_secs(interval)).await;
+                let _ = tx.send(Message::SendHeartbeat).await;
+            }
+        }))
+    }
+    
+    /// Routes messages from the receiver for the Steam client connection. This exists independently 
+    /// from the sender, if a connection is lost the receiver will no longer receive messages.
+    pub fn route_steam_messages(
+        mut rx: Receiver<Result<RawNetMessage, NetworkError>>,
+        tx: Sender<Message>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            while let Some(msg_result) = rx.recv().await {
+                match msg_result {
+                    Ok(msg) => {
+                        let _ = tx.send(Message::NetMessage(msg)).await;
+                    },
+                    Err(error) => {
+                        // Unlikely to occur, something is possibly wrong with the configuration
+                        panic!("Error reading message: {}", error);
+                    },
+                }
+            }
+            
+            // No more messages means connection was most likely closed - send a notice
+            let _ = tx.send(Message::Disconnected).await;
+        })
+    }
+    
+    pub fn handle_connection(
+        bot: Arc<Bot>,
+        connection: Connection,
+        tx: Sender<Message>,
+        mut rx: Receiver<Message>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut handler = MessageHandler {
+                tx,
+                bot,
+                connection,
+                web_session_callbacks: Vec::new(),
+            };
+            
+            while let Some(message) = rx.recv().await {
+                if let Err(error) = handler.handle_message(message).await {
+                    log::warn!("Error handling message: {error}");
+                }
+            }
+        })
+    }
+    
+    pub async fn handle(
+        bot: Arc<Bot>,
+        mut connection: Connection,
+        connection_rx: Receiver<Result<RawNetMessage, NetworkError>>, 
+    ) -> Result<Vec<JoinHandle<()>>, NetworkError> {
+        let (tx, rx) = mpsc::channel::<Message>(50);
+        // Receiver for when the web session is ready
+        let web_session_rx = on_connection(&mut connection, &tx).await?;
+        
+        Ok(vec![
+            // send a heartbeat to keep the connection alive
+            poll_heartbeat(&mut connection, tx.clone()).await?,
+            // route messages from Steam connection
+            route_steam_messages(connection_rx, tx.clone()),
+            tokio::spawn(async move {
+                if web_session_rx.await.is_ok() {
+                    log::info!("Web session ready");
+                }
+            }),
+            // read messages from connection
+            // all messages sent through tx will be to this task
+            handle_connection(
+                bot,
+                connection,
+                tx,
+                rx,
+            ),
+        ])
+    }
+}
+
+pub struct Bot {
     steamid: SteamID,
+    account_name: String,
     data_directory: Option<PathBuf>,
     state: Arc<RwLock<State>>,
 }
@@ -40,60 +197,97 @@ impl Bot {
     /// Reads a file associated with account
     fn read_account_file(
         filename: &str,
-        steamid: SteamID,
+        account_name: &str,
         data_directory: &PathBuf,
     ) -> std::io::Result<Vec<u8>> {
-        let filepath = data_directory.join(format!("{}/{filename}", u64::from(steamid)));
+        let filepath = Self::get_account_filepath(filename, account_name, data_directory);
         let mut bytes: Vec<u8> = Vec::new();
+        let mut file = File::open(filepath)?;
         
-        File::create(filepath)?.read_to_end(&mut bytes)?;
+        file.read_to_end(&mut bytes)?;
         Ok(bytes)
     }
     
+    fn get_account_filepath(
+        filename: &str,
+        account_name: &str,
+        data_directory: &PathBuf,
+    ) -> PathBuf {
+        data_directory.join(format!("{account_name}/{filename}"))
+    }
+    
+    /// Gets login credentials
+    fn get_credentials(
+        data_directory: &Option<PathBuf>,
+    ) -> CMsgClientLogon {
+        // Attempt to take account name and password from env
+        let account_name = std::env::var("ACCOUNT_NAME")
+            .unwrap_or_else(|_e| helpers::prompt("Account name?"));
+        let password = std::env::var("PASSWORD")
+            .unwrap_or_else(|_e| helpers::prompt("Password?"));
+        let mut credentials = Connection::default_login_message(
+            account_name.clone(),
+            password,
+        );
+        
+        credentials.set_should_remember_password(true);
+        
+        if let Some(data_directory) = data_directory {
+            let machine_id_filepath = data_directory.join("machineid");
+            
+            if let Err(error) = Connection::set_machine_id_from_file(&mut credentials, &machine_id_filepath) {
+                log::info!("Error setting machineid from {machine_id_filepath:?}: {error}");
+            }
+            
+            match Bot::read_account_file("sentry", &account_name, &data_directory) {
+                Ok(bytes) => {
+                    let sentry = helpers::create_sha1(&bytes);
+                    
+                    credentials.set_sha_sentryfile(sentry);
+                    credentials.set_eresult_sentryfile(1);
+                },
+                // Don't display a message if a file does not exist
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                Err(error) => {
+                    log::warn!("Error reading sentry file: {error}");
+                },
+            }
+            
+            match Bot::read_account_file("login_key", &account_name, &data_directory) {
+                Ok(bytes) => {
+                    let login_key = String::from_utf8(bytes).unwrap();
+                    
+                    credentials.set_login_key(login_key);
+                    return credentials;
+                },
+                // Don't display a message if a file does not exist
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                Err(error) => {
+                    log::warn!("Error reading login key file: {error}");
+                },
+            }
+        }
+        
+        credentials.set_two_factor_code(helpers::get_two_factor_code());
+        credentials
+    }
+    
     /// Saves a file associated with account
-    fn save_file(
+    async fn save_file(
         &self,
         filename: &str,
         bytes: &[u8],
     ) -> std::io::Result<Option<PathBuf>> {
         if let Some(data_directory) = &self.data_directory {
-            let account_directory = data_directory.join(format!("{}", u64::from(self.steamid)));
+            let account_directory = data_directory.join(&self.account_name);
+            let filepath = Self::get_account_filepath(filename, &self.account_name, data_directory);
             // Create the directory
             std::fs::create_dir_all(&account_directory)?;
-            let filepath = account_directory.join(filename);
-            atomic_write(&filepath, bytes)?;
+            helpers::atomic_write(&filepath, bytes).await?;
             return Ok(Some(filepath));
         }
         
         Ok(None)
-    }
-}
-
-fn atomic_write<T>(
-    filepath: T,
-    bytes: &[u8],
-) -> std::io::Result<()>
-where
-    T: Into<PathBuf>,
-{
-    let filepath = filepath.into();
-    let mut temp_filepath = filepath.clone();
-    
-    temp_filepath.set_extension("tmp");
-    
-    let mut temp_file = File::create(&temp_filepath)?;
-    
-    match temp_file.write_all(bytes) {
-        Ok(_) => {
-            temp_file.flush()?;
-            std::fs::rename(&temp_filepath,&filepath)?;
-            Ok(())
-        },
-        Err(error) => {
-            // something went wrong writing to this file...
-            std::fs::remove_file(&temp_filepath)?;
-            Err(error)
-        }
     }
 }
 
@@ -103,11 +297,12 @@ struct State {
     credentials: CMsgClientLogon,
 }
 
-type WebSessionCallback = tokio::sync::oneshot::Sender<(String, Vec<String>)>;
-type WebSessionReceiver = tokio::sync::oneshot::Receiver<(String, Vec<String>)>;
+type WebSession = (String, Vec<String>);
+type WebSessionCallback = tokio::sync::oneshot::Sender<WebSession>;
+type WebSessionReceiver = tokio::sync::oneshot::Receiver<WebSession>;
 
 #[derive(Debug)]
-enum Message {
+pub enum Message {
     ChatMessage {
         steamid: SteamID,
         message: String,
@@ -123,7 +318,7 @@ enum Message {
     },
 }
 
-struct MessageHandler {
+pub struct MessageHandler {
     tx: Sender<Message>,
     bot: Arc<Bot>,
     connection: Connection,
@@ -147,7 +342,7 @@ impl MessageHandler {
         match target_job_name.as_ref() {
             CFriendMessages_IncomingMessage_Notification::NAME => {
                 let msg: CFriendMessages_IncomingMessage_Notification = get_service_request(msg)?;
-                let message = msg.get_message().to_string();
+                let message = msg.get_message().to_owned();
                 
                 if !message.is_empty() {
                     let steamid = SteamID::from(msg.get_steamid_friend());
@@ -178,17 +373,17 @@ impl MessageHandler {
                 let _ = self.tx.send(Message::PersonaName(persona_name.to_owned())).await;
             },
             EMsg::k_EMsgClientUpdateMachineAuth => {
-                // We received the sentry
-                let source_job_id: u64 = msg.header.source_job_id;
+                // We received a sentry
+                let source_job_id = msg.header.source_job_id;
                 let message = msg.into_message::<CMsgClientUpdateMachineAuth>()?;
                 let bytes = message.get_bytes();
                 
-                match self.bot.save_file("sentry", bytes) {
+                match self.bot.save_file("sentry", bytes).await {
                     Ok(Some(filepath)) => {
                         log::info!("Sentry saved to {filepath:?}");
                         
                         let mut req = CMsgClientUpdateMachineAuthResponse::new();
-                        let hash = create_sha1(bytes);
+                        let hash = helpers::create_sha1(bytes);
                         
                         // Write the sentry to our login credentials for reconnects
                         {
@@ -201,6 +396,7 @@ impl MessageHandler {
                         req.set_sha_file(hash);
                         // Send a response that it was received
                         self.connection.send_response(req, source_job_id).await?;
+                        log::info!("sent response");
                     },
                     // No data directory set
                     Ok(None) => {},
@@ -210,11 +406,11 @@ impl MessageHandler {
                 }
             },
             EMsg::k_EMsgClientNewLoginKey => {
-                // We received the login key
+                // We received a login key
                 let message = msg.into_message::<CMsgClientNewLoginKey>()?;
                 let login_key = message.get_login_key();
                 
-                match self.bot.save_file("login_key", login_key.as_bytes()) {
+                match self.bot.save_file("login_key", login_key.as_bytes()).await {
                     Ok(Some(filepath)) => {
                         log::info!("Login key saved to {filepath:?}");
                         
@@ -321,8 +517,13 @@ impl MessageHandler {
                 self.connection.chat_message(steamid, message).await?;
             },
             Message::PersonaName(persona_name) => {
-                log::info!("Logged in as {}", persona_name);
-                self.bot.state.write().unwrap().personaname = Some(persona_name);
+                let mut state = self.bot.state.write().unwrap();
+                
+                if state.personaname.is_none() {
+                    log::info!("Logged in as {persona_name}");
+                }
+                
+                state.personaname = Some(persona_name);
             },
             Message::SendHeartbeat => {
                 self.connection.send_heartbeat().await?;
@@ -346,12 +547,10 @@ impl MessageHandler {
                 cookies, 
             } => {
                 log::info!("Got cookies");
-                let mut callbacks: Vec<WebSessionCallback> = Vec::new();
-                // Take the current callbacks
-                std::mem::swap(&mut self.web_session_callbacks, &mut callbacks);
-                
-                for callback in callbacks {
-                    let _ = callback.send((sessionid.clone(), cookies.clone()));
+                // Empty the callbacks
+                for sender in std::mem::take(&mut self.web_session_callbacks) {
+                    // Call send for each sender
+                    let _ = sender.send((sessionid.clone(), cookies.clone()));
                 }
             },
             Message::WebAuthenticateWithCallback(sender) => {
@@ -365,45 +564,6 @@ impl MessageHandler {
     }
 }
 
-fn handle_connection(
-    bot: Arc<Bot>,
-    connection: Connection,
-    tx: Sender<Message>,
-    mut rx: Receiver<Message>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut handler = MessageHandler {
-            tx,
-            bot,
-            connection,
-            web_session_callbacks: Vec::new(),
-        };
-        
-        while let Some(message) = rx.recv().await {
-            if let Err(error) = handler.handle_message(message).await {
-                log::warn!("Error handling message: {error}");
-            }
-        }
-    })
-}
-
-/// Requests a new web session. 
-async fn request_web_api_session_with_callback(
-    tx: &Sender<Message>,
-) -> WebSessionReceiver {
-    // renew the web session
-    let (web_session_tx, rx) = tokio::sync::oneshot::channel::<(String, Vec<String>)>();
-    let _ = tx.send(Message::WebAuthenticateWithCallback(web_session_tx)).await;
-    
-    rx
-}
-
-async fn ready_state(connection: &mut Connection) -> Result<(), NetworkError> {
-    connection.set_persona_state(EPersonaState::Online).await?;
-    
-    Ok(())
-}
-
 async fn reconnect(
     mut credentials: CMsgClientLogon,
     connection: &mut Connection,
@@ -413,7 +573,7 @@ async fn reconnect(
     let mut retries = 3;
     
     loop {
-        credentials.set_two_factor_code(get_two_factor_code());
+        credentials.set_two_factor_code(helpers::get_two_factor_code());
         
         // Attempt to reconnect
         match connection.reconnect(
@@ -423,18 +583,15 @@ async fn reconnect(
             Ok(rx) => {
                 log::info!("We're back online!");
                 // Read messages from it
-                let _handle = read_steam_messages(rx, tx.clone());
-                // Set the bot to online
-                let _ = ready_state(connection).await;
-                // Refresh the web session
-                let _ = request_web_api_session_with_callback(&tx).await;
+                let _handle = tasks::route_steam_messages(rx, tx.clone());
+                let _ = on_connection(connection, &tx).await;
                 break;
             },
             Err(error) if retries <= 0 => {
                 panic!("Error reconnecting: {}", error);
             },
             Err(error) => {
-                log::warn!("Error reconnecting: {}", error);
+                log::warn!("Error reconnecting: {error}");
                 log::info!("Trying again...");
                 retries -= 1;
                 async_std::task::sleep(std::time::Duration::from_secs(10)).await;
@@ -443,140 +600,19 @@ async fn reconnect(
     }
 }
 
-// This will continue to send a heartbeat to the connection
-async fn poll_heartbeat(
-    connection: &mut Connection,
-    tx: Sender<Message>,
-) -> Result<tokio::task::JoinHandle<()>, NetworkError> {
-    let interval = connection.send_heartbeat().await?;
-    
-    Ok(tokio::spawn(async move {
-        loop {
-            async_std::task::sleep(std::time::Duration::from_secs(interval)).await;
-            let _ = tx.send(Message::SendHeartbeat).await;
-        }
-    }))
-}
-
-fn prompt(message: &str) -> String {
-    log::info!("{}", message);
-    let mut input = String::new();
-    let _ = std::io::stdin().read_line(&mut input);
-    
-    input.trim().to_string()
-}
-
-fn create_sha1(input: &[u8]) -> Vec<u8> {
-    let mut hasher = Sha1::new();
-    
-    hasher.update(input);
-    hasher.finalize().to_vec()
-}
-
-fn get_login(
-    data_directory: &Option<PathBuf>,
-) -> CMsgClientLogon {
-    /// Provides login key and sentry from filesystem
-    fn get_login_key_and_sentry(
-        steamid: SteamID,
-        data_directory: &PathBuf,
-    ) -> std::io::Result<(String, Vec<u8>)> {
-        let login_key = Bot::read_account_file("login_key", steamid, &data_directory)?;
-        let sentry_file = Bot::read_account_file("sentry", steamid, data_directory)?;
-        let login_key = String::from_utf8(login_key).unwrap();
-        let sentry = create_sha1(&sentry_file);
-        
-        Ok((login_key, sentry))
-    }
-    
-    fn env_steamid() -> Option<SteamID> {
-        std::env::var("STEAMID").ok()?
-            .parse::<u64>().ok()
-            .map(|s| s.into())
-    }
-    
-    fn key_login(
-        data_directory: &PathBuf,
-    ) -> Option<(String, Vec<u8>)> {
-        let steamid = env_steamid()?;
-        
-        get_login_key_and_sentry(steamid, data_directory).ok()
-    }
-    
-    // Attempt to take account name and password from env
-    let account_name = std::env::var("ACCOUNT_NAME")
-        .unwrap_or_else(|_e| prompt("Account name?"));
-    let password = std::env::var("PASSWORD")
-        .unwrap_or_else(|_e| prompt("Password?"));
-    let mut credentials = Connection::default_login_message(
-        account_name,
-        password,
-    );
-    
-    if let Some(data_directory) = data_directory {
-        let machine_id_filepath = data_directory.join("machineid");
-        
-        if let Err(error) = Connection::set_machine_id_from_file(&mut credentials, &machine_id_filepath) {
-            log::info!("Error setting machineid from {machine_id_filepath:?}: {error}");
-        }
-        
-        if let Some((login_key, sentry)) = key_login(data_directory) {
-            credentials.set_login_key(login_key);
-            credentials.set_sha_sentryfile(sentry);
-            credentials.set_eresult_sentryfile(1);
-            
-            return credentials;
-        }
-    }
-    
-    credentials.set_two_factor_code(get_two_factor_code());
-    credentials
-}
-
-fn get_two_factor_code() -> String {
-    if let Ok(shared_secret) = std::env::var("SHARED_SECRET") {    
-        // Generates the 5-character time-based one-time password using your shared_secret.
-        if let Ok(two_factor_code) = generate_auth_code(shared_secret, None) {
-            return two_factor_code;
-        }
-    }
-    
-    prompt("Two factor code?")
-}
-
-/// Routes messages from the receiver for the Steam client connection. This exists independently 
-/// from the sender, if a connection is lost the receiver will no longer receive messages.
-fn read_steam_messages(
-    mut rx: Receiver<Result<RawNetMessage, NetworkError>>,
-    tx: Sender<Message>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Some(msg_result) = rx.recv().await {
-            match msg_result {
-                Ok(msg) => {
-                    let _ = tx.send(Message::NetMessage(msg)).await;
-                },
-                Err(error) => {
-                    // Unlikely to occur, something is possibly wrong with the configuration
-                    panic!("Error reading message: {}", error);
-                },
-            }
-        }
-        
-        // No more messages means connection was most likely disconnected - send a notice
-        let _ = tx.send(Message::Disconnected).await;
-    })
-}
-
-/// Things to call on initialization
+/// Calls initialization methods for connection.
 async fn on_connection(
     connection: &mut Connection,
     tx: &Sender<Message>,
 ) -> Result<WebSessionReceiver, NetworkError> {
     // Set the bot to online
-    ready_state(connection).await?;
+    connection.set_persona_state(EPersonaState::Online).await?;
     // Get a web session
-    let web_session_rx = request_web_api_session_with_callback(&tx).await;
+    let (
+        web_session_tx,
+        web_session_rx,
+    ) = tokio::sync::oneshot::channel::<WebSession>();
+    let _ = tx.send(Message::WebAuthenticateWithCallback(web_session_tx)).await;
     
     Ok(web_session_rx)
 }
@@ -590,49 +626,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     
     let data_directory: Option<PathBuf> = std::env::var("DATA_DIRECTORY").ok().map(|s| s.into());
-    let credentials = get_login(&data_directory);
+    let credentials = Bot::get_credentials(&data_directory);
     let (
-        mut connection,
+        connection,
         connection_rx,
     ) = Connection::login(credentials.clone()).await?;
-    log::info!("Logged in as {}", u64::from(connection.session.steam_id));
-    // We're logged in
-    let (tx, rx) = mpsc::channel::<Message>(10);
     // Data associated with bot - can be shared across tasks
     let bot = Arc::new(Bot {
         steamid: connection.session.steam_id,
+        account_name: credentials.get_account_name().to_owned(),
         data_directory,
-        // Shared mutable state that can be shared across tasks
+        // Shared mutable state
         state: Arc::new(RwLock::new(State {
             personaname: None,
             messages_received: HashMap::new(),
             credentials,
         })),
     });
-    // Receiver for when the web session is ready
-    let web_session_rx = on_connection(&mut connection, &tx).await?;
-    let handles = vec![
-        // send a heartbeat to keep the connection alive
-        poll_heartbeat(&mut connection, tx.clone()).await?,
-        // read messages from senders
-        read_steam_messages(connection_rx, tx.clone()),
-        // read messages from connection
-        // all messages sent through tx will be to this task
-        handle_connection(
-            bot,
-            connection,
-            tx,
-            rx,
-        ),
-    ];
     
-    if web_session_rx.await.is_ok() {
-        log::info!("Web session ready");
+    // We're logged in
+    log::info!("Logged in as {}", u64::from(connection.session.steam_id));
+    for handle in tasks::handle(bot, connection, connection_rx).await? {
+        handle.await?;
     }
-    
-    for handle in handles {
-        handle.await.unwrap();
-    }
-    
     Ok(())
 }

@@ -96,7 +96,7 @@ pub fn create_logon(
     let mut logon = CMsgClientLogon::new();
     
     logon.set_protocol_version(65580);
-    logon.set_client_os_type(203);
+    logon.set_client_os_type(203); // linux
     logon.set_should_remember_password(true);
     logon.set_supports_rate_limit_response(true);
     logon.set_anon_user_target_account_name(String::new());
@@ -109,7 +109,7 @@ pub fn create_logon(
     logon.set_machine_id(get_random_machine_id());
     logon.set_machine_name(String::new());
     logon.set_steamguard_dont_remember_computer(false);
-    logon.set_chat_mode(2);
+    logon.set_chat_mode(2); // enable new chat
     logon.set_account_name(account_name);
     logon.set_password(password);
     logon.set_cell_id(79);
@@ -117,7 +117,11 @@ pub fn create_logon(
 }
 
 fn get_random_machine_id() -> Vec<u8> {
-    fn get_machine_id_from_values(val_bb3: &str, val_ff2: &str, val_3b3: &str) -> Vec<u8> {
+    fn get_machine_id_from_values(
+        val_bb3: &str,
+        val_ff2: &str,
+        val_3b3: &str,
+    ) -> Vec<u8> {
         fn get_c_string_bytes(input: &str) -> Vec<u8> {
             let mut bytes = input.as_bytes().to_vec();
             
@@ -156,9 +160,7 @@ fn get_random_machine_id() -> Vec<u8> {
     }
     
     fn get_random_str() -> String {
-        let mut rng = rand::thread_rng();
-        
-        rng.gen::<f32>().to_string()
+        rand::thread_rng().gen::<f32>().to_string()
     }
     
     get_machine_id_from_values(

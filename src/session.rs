@@ -84,7 +84,6 @@ fn get_anon_login_msg() -> CMsgClientLogon {
     logon.set_machine_name(String::new());
     logon.set_steamguard_dont_remember_computer(false);
     logon.set_chat_mode(2);
-    
     logon
 }
 
