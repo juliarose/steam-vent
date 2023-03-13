@@ -28,7 +28,7 @@ use steam_vent::net::{NetworkError, RawNetMessage};
 use steam_vent::service_method::ServiceMethodRequest;
 use tokio::sync::mpsc::Sender;
 
-// helper methods
+/// Helper methods.
 mod helpers {
     use another_steam_totp::generate_auth_code;
     use sha1::{Sha1, Digest};
@@ -36,6 +36,7 @@ mod helpers {
     use async_std::io::WriteExt;
     use async_std::fs::File;
     
+    /// Prompts user for input.
     pub fn prompt(message: &str) -> String {
         println!("{}", message);
         let mut input = String::new();
@@ -44,6 +45,7 @@ mod helpers {
         input.trim().to_string()
     }
     
+    /// Creates a sha1 hash.
     pub fn create_sha1(input: &[u8]) -> Vec<u8> {
         let mut hasher = Sha1::new();
         
@@ -51,6 +53,8 @@ mod helpers {
         hasher.finalize().to_vec()
     }
     
+    /// Gets two factor code either using the shared secret from an environment variable or from a 
+    /// prompt.
     pub fn get_two_factor_code() -> String {
         if let Ok(shared_secret) = std::env::var("SHARED_SECRET") {    
             // Generates the 5-character time-based one-time password using your shared_secret.
@@ -62,6 +66,7 @@ mod helpers {
         prompt("Two factor code?")
     }
     
+    /// Writes a file atomically.
     pub async fn atomic_write<T: Into<PathBuf>>(
         filepath: T,
         bytes: &[u8],
@@ -85,7 +90,7 @@ mod helpers {
     }
 }
 
-/// Spawned tasks
+/// Spawned tasks.
 mod tasks {
     use super::{Bot, Message, MessageHandler, on_connection};
     use std::sync::Arc;
@@ -93,21 +98,6 @@ mod tasks {
     use steam_vent::net::{RawNetMessage, NetworkError};
     use tokio::sync::mpsc::{self, Receiver, Sender};
     use tokio::task::JoinHandle;
-    
-    // This will continue to send a heartbeat to the connection
-    pub async fn poll_heartbeat(
-        connection: &mut Connection,
-        tx: Sender<Message>,
-    ) -> Result<JoinHandle<()>, NetworkError> {
-        let interval = connection.send_heartbeat().await?;
-        
-        Ok(tokio::spawn(async move {
-            loop {
-                async_std::task::sleep(std::time::Duration::from_secs(interval)).await;
-                let _ = tx.send(Message::SendHeartbeat).await;
-            }
-        }))
-    }
     
     /// Routes messages from the receiver for the Steam client connection. This exists independently 
     /// from the sender, if a connection is lost the receiver will no longer receive messages.
@@ -133,33 +123,50 @@ mod tasks {
         })
     }
     
-    pub fn handle_connection(
-        bot: Arc<Bot>,
-        connection: Connection,
-        tx: Sender<Message>,
-        mut rx: Receiver<Message>,
-    ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut handler = MessageHandler {
-                tx,
-                bot,
-                connection,
-                web_session_callbacks: Vec::new(),
-            };
-            
-            while let Some(message) = rx.recv().await {
-                if let Err(error) = handler.handle_message(message).await {
-                    log::warn!("Error handling message: {error}");
-                }
-            }
-        })
-    }
-    
+    /// Handles the connection.
     pub async fn handle(
         bot: Arc<Bot>,
         mut connection: Connection,
         connection_rx: Receiver<Result<RawNetMessage, NetworkError>>, 
     ) -> Result<Vec<JoinHandle<()>>, NetworkError> {
+        /// Sends a heartbeat to the connection at an interval determined by the connection.
+        async fn poll_heartbeat(
+            connection: &mut Connection,
+            tx: Sender<Message>,
+        ) -> Result<JoinHandle<()>, NetworkError> {
+            let interval = connection.send_heartbeat().await?;
+            
+            Ok(tokio::spawn(async move {
+                loop {
+                    async_std::task::sleep(std::time::Duration::from_secs(interval)).await;
+                    let _ = tx.send(Message::SendHeartbeat).await;
+                }
+            }))
+        }
+        
+        /// Listens to updates and handles the connection.
+        fn handle_connection(
+            bot: Arc<Bot>,
+            connection: Connection,
+            tx: Sender<Message>,
+            mut rx: Receiver<Message>,
+        ) -> JoinHandle<()> {
+            tokio::spawn(async move {
+                let mut handler = MessageHandler {
+                    tx,
+                    bot,
+                    connection,
+                    web_session_callbacks: Vec::new(),
+                };
+                
+                while let Some(message) = rx.recv().await {
+                    if let Err(error) = handler.handle_message(message).await {
+                        log::warn!("Error handling message: {error}");
+                    }
+                }
+            })
+        }
+        
         let (tx, rx) = mpsc::channel::<Message>(50);
         // Receiver for when the web session is ready
         let web_session_rx = on_connection(&mut connection, &tx).await?;
@@ -186,6 +193,7 @@ mod tasks {
     }
 }
 
+/// Stores data associated with bot.
 pub struct Bot {
     steamid: SteamID,
     account_name: String,
@@ -208,6 +216,7 @@ impl Bot {
         Ok(bytes)
     }
     
+    /// Gets the filepath for a file.
     fn get_account_filepath(
         filename: &str,
         account_name: &str,
@@ -229,8 +238,6 @@ impl Bot {
             account_name.clone(),
             password,
         );
-        
-        credentials.set_should_remember_password(true);
         
         if let Some(data_directory) = data_directory {
             let machine_id_filepath = data_directory.join("machineid");
@@ -291,6 +298,7 @@ impl Bot {
     }
 }
 
+/// State associated with [`Bot`].
 struct State {
     personaname: Option<String>,
     messages_received: HashMap<SteamID, i32>,
@@ -301,23 +309,32 @@ type WebSession = (String, Vec<String>);
 type WebSessionCallback = tokio::sync::oneshot::Sender<WebSession>;
 type WebSessionReceiver = tokio::sync::oneshot::Receiver<WebSession>;
 
+/// A message.
 #[derive(Debug)]
 pub enum Message {
+    /// A chat message was received.
     ChatMessage {
         steamid: SteamID,
         message: String,
     },
+    /// A request to send a heartbeat was received.
     SendHeartbeat,
+    /// A persona name was received.
     PersonaName(String),
+    /// A disconnect was received.
     Disconnected,
+    /// A [`RawNetMessage`] was received from the [`tokio::sync::mpsc::Receiver`] for [`Connection`].
     NetMessage(RawNetMessage),
+    /// A request to authenticate web session was received.
     WebAuthenticateWithCallback(WebSessionCallback),
+    /// A web session was received.
     WebSession {
         sessionid: String,
         cookies: Vec<String>,
     },
 }
 
+/// Handles messages associated with [`Connection`].
 pub struct MessageHandler {
     tx: Sender<Message>,
     bot: Arc<Bot>,
@@ -396,7 +413,6 @@ impl MessageHandler {
                         req.set_sha_file(hash);
                         // Send a response that it was received
                         self.connection.send_response(req, source_job_id).await?;
-                        log::info!("sent response");
                     },
                     // No data directory set
                     Ok(None) => {},
