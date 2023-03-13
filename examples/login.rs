@@ -498,7 +498,7 @@ impl MessageHandler {
         let count = {
             let mut state_guard = self.bot.state.write().unwrap();
             let count = state_guard.messages_received
-                .entry(steamid.clone())
+                .entry(steamid)
                 .and_modify(|count| *count += 1)
                 .or_insert_with(|| 1);
             
