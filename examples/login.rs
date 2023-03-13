@@ -553,10 +553,8 @@ impl MessageHandler {
                     self.tx.clone(),
                 ).await;
             },
-            Message::NetMessage(msg) => {
-                if let Err(error) = self.handle_net_message(msg).await {
-                    log::warn!("Error handling net message: {error}");
-                }
+            Message::NetMessage(msg) => if let Err(error) = self.handle_net_message(msg).await {
+                log::warn!("Error handling net message: {error}");
             },
             Message::WebSession {
                 sessionid,
