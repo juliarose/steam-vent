@@ -48,7 +48,7 @@ use steam_api::SteamAPI;
 type Result<T, E = NetworkError> = std::result::Result<T, E>;
 type Login = (Connection, mpsc::Receiver<Result<RawNetMessage>>);
 
-const SERVER_IP: &str = "155.133.226.75:27018";
+const SERVER_IP: &str = "155.133.226.78:27017";
 
 pub struct Connection {
     pub session: Session,
