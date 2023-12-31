@@ -3,6 +3,9 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use thiserror::Error;
 use tracing::debug;
+use futures::stream::FuturesUnordered;
+use futures_util::StreamExt;
+use tokio_tungstenite::connect_async;
 
 #[derive(Debug, Error)]
 pub enum ServerDiscoveryError {
@@ -55,7 +58,7 @@ impl ServerList {
     ) -> Result<ServerList, ServerDiscoveryError> {
         let client = options.web_client.unwrap_or_default();
         let cell = options.cell;
-
+        println!("{cell}");
         let response: ServerListResponse = client
             .get(&format!(
                 "https://api.steampowered.com/ISteamDirectory/GetCMList/v1/?cellid={cell}"
@@ -69,20 +72,50 @@ impl ServerList {
         }
         Ok(response.into())
     }
-
+    
     pub fn pick(&self) -> SocketAddr {
         // todo: something more smart than always using the first
         let addr = *self.servers.first().unwrap();
         debug!(addr = ?addr, "picked server from list");
         addr
     }
-
-    pub fn pick_ws(&self) -> String {
+    
+    pub async fn pick_ws(&self) -> String {
+        // todo: something more smart than always using the first
+        let addr = pick_closest_ws(&self.ws_servers).await.unwrap().clone();
+        debug!(addr = ?addr, "picked websocket server from list");
+        format!("wss://{addr}/cmsocket/")
+    }
+    
+    pub fn pick_rand_ws(&self) -> String {
         // todo: something more smart than always using the first
         let addr = self.ws_servers.first().unwrap();
         debug!(addr = ?addr, "picked websocket server from list");
         format!("wss://{addr}/cmsocket/")
     }
+}
+
+/// Pings each address and picks the one which responds first.
+async fn pick_closest_ws(servers: &[String]) -> Option<&String> {
+    let mut pings = servers
+        .iter()
+        .map(|addr| async move {
+            if connect_async(format!("wss://{addr}/cmsocket/")).await.is_ok() {
+                Some(addr)
+            } else {
+                None
+            }
+        })
+        .collect::<FuturesUnordered<_>>();
+    
+    while let Some(ping) = pings.next().await {
+        if let Some(addr) = ping {
+            println!("{addr}");
+            return Some(addr);
+        }
+    }
+    
+    None
 }
 
 impl From<ServerListResponse> for ServerList {

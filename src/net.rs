@@ -59,6 +59,7 @@ pub struct NetMessageHeader {
     pub session_id: i32,
     pub target_job_name: Option<Cow<'static, str>>,
     pub result: Option<i32>,
+    pub routing_appid: Option<u32>,
 }
 
 impl From<CMsgProtoBufHeader> for NetMessageHeader {
@@ -72,6 +73,7 @@ impl From<CMsgProtoBufHeader> for NetMessageHeader {
                 .has_target_job_name()
                 .then(|| header.target_job_name().to_string().into()),
             result: header.eresult,
+            routing_appid: None,
         }
     }
 }
@@ -125,6 +127,7 @@ impl NetMessageHeader {
                     session_id,
                     target_job_name: None,
                     result: None,
+                    routing_appid: None,
                 },
                 4 + 3 + 8 + 8 + 1 + 8 + 4,
             ))

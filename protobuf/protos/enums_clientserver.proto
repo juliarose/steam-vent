@@ -119,15 +119,12 @@ enum EMsg {
 	k_EMsgAMCancelLicense = 511;
 	k_EMsgAMInitPurchase = 512;
 	k_EMsgAMPurchaseResponse = 513;
-	k_EMsgAMGetFinalPrice = 514;
-	k_EMsgAMGetFinalPriceResponse = 515;
 	k_EMsgAMGetLegacyGameKey = 516;
 	k_EMsgAMGetLegacyGameKeyResponse = 517;
 	k_EMsgAMFindHungTransactions = 518;
 	k_EMsgAMSetAccountTrustedRequest = 519;
 	k_EMsgAMCancelPurchase = 522;
 	k_EMsgAMNewChallenge = 523;
-	k_EMsgAMLoadOEMTickets = 524;
 	k_EMsgAMFixPendingPurchase = 525;
 	k_EMsgAMFixPendingPurchaseResponse = 526;
 	k_EMsgAMIsUserBanned = 527;
@@ -490,9 +487,6 @@ enum EMsg {
 	k_EMsgBaseDP = 1600;
 	k_EMsgDPSetPublishingState = 1601;
 	k_EMsgDPUniquePlayersStat = 1603;
-	k_EMsgDPStreamingUniquePlayersStat = 1604;
-	k_EMsgDPBlockingStats = 1607;
-	k_EMsgDPNatTraversalStats = 1608;
 	k_EMsgDPCloudStats = 1612;
 	k_EMsgDPGetPlayerCount = 1615;
 	k_EMsgDPGetPlayerCountResponse = 1616;
@@ -511,6 +505,7 @@ enum EMsg {
 	k_EMsgCMSessionRejected = 1703;
 	k_EMsgCMSetSecrets = 1704;
 	k_EMsgCMGetSecrets = 1705;
+	k_EMsgCMRemotePlayReplyPacket = 1706;
 	k_EMsgBaseGC = 2200;
 	k_EMsgGCCmdRevive = 2203;
 	k_EMsgGCCmdDown = 2206;
@@ -591,8 +586,6 @@ enum EMsg {
 	k_EMsgOGSEndSessionResponse = 3404;
 	k_EMsgOGSWriteAppSessionRow = 3406;
 	k_EMsgBaseBRP = 3600;
-	k_EMsgBRPPostTransactionTax = 3629;
-	k_EMsgBRPPostTransactionTaxResponse = 3630;
 	k_EMsgBaseAMRange2 = 4000;
 	k_EMsgAMCreateChat = 4001;
 	k_EMsgAMCreateChatResponse = 4002;
@@ -697,7 +690,6 @@ enum EMsg {
 	k_EMsgAMSetUserNewsSubscriptions = 4149;
 	k_EMsgAMSendQueuedEmails = 4152;
 	k_EMsgAMSetLicenseFlags = 4153;
-	k_EMsgCommunityDeleteUserNews = 4155;
 	k_EMsgAMGetAccountStatus = 4158;
 	k_EMsgAMGetAccountStatusResponse = 4159;
 	k_EMsgAMEditBanReason = 4160;
@@ -889,6 +881,8 @@ enum EMsg {
 	k_EMsgPSGetShoppingCartContentsResponse = 5010;
 	k_EMsgPSAddWalletCreditToShoppingCart = 5011;
 	k_EMsgPSAddWalletCreditToShoppingCartResponse = 5012;
+	k_EMsgPSGetAccountCartContents = 5013;
+	k_EMsgPSGetAccountCartContentsResponse = 5014;
 	k_EMsgBaseUFSRange = 5200;
 	k_EMsgClientUFSUploadFileRequest = 5202;
 	k_EMsgClientUFSUploadFileResponse = 5203;
@@ -988,9 +982,6 @@ enum EMsg {
 	k_EMsgClientLogOnWithHash_Deprecated = 5465;
 	k_EMsgClientStoreUserStats2 = 5466;
 	k_EMsgClientStatsUpdated = 5467;
-	k_EMsgClientActivateOEMLicense = 5468;
-	k_EMsgClientRegisterOEMMachine = 5469;
-	k_EMsgClientRegisterOEMMachineResponse = 5470;
 	k_EMsgClientRequestedClientStats = 5480;
 	k_EMsgClientStat2Int32 = 5481;
 	k_EMsgClientStat2 = 5482;
@@ -1328,15 +1319,6 @@ enum EMsg {
 	k_EMsgClientUGSGetGlobalStatsResponse = 7902;
 	k_EMsgStoreBase = 8000;
 	k_EMsgUMQBase = 8100;
-	k_EMsgUMQLogonRequest = 8100;
-	k_EMsgUMQLogonResponse = 8101;
-	k_EMsgUMQLogoffRequest = 8102;
-	k_EMsgUMQLogoffResponse = 8103;
-	k_EMsgUMQSendChatMessage = 8104;
-	k_EMsgUMQIncomingChatMessage = 8105;
-	k_EMsgUMQPoll = 8106;
-	k_EMsgUMQPollResults = 8107;
-	k_EMsgUMQ2AM_ClientMsgBatch = 8108;
 	k_EMsgWorkshopBase = 8200;
 	k_EMsgWebAPIBase = 8300;
 	k_EMsgWebAPIValidateOAuth2Token = 8300;
@@ -1421,7 +1403,6 @@ enum EMsg {
 	k_EMsgSLCSharedLicensesLockStatus = 9402;
 	k_EMsgClientSharedLibraryLockStatus = 9405;
 	k_EMsgClientSharedLibraryStopPlaying = 9406;
-	k_EMsgSLCOwnerLibraryChanged = 9407;
 	k_EMsgSLCSharedLibraryChanged = 9408;
 	k_EMsgRemoteClientBase = 9500;
 	k_EMsgRemoteClientAuth_OBSOLETE = 9500;
@@ -1486,6 +1467,8 @@ enum EMsg {
 	k_EMsgWGConnectionValidateUserTokenResponse = 12202;
 	k_EMsgWGConnectionLegacyWGRequest = 12203;
 	k_EMsgWGConnectionLegacyWGResponse = 12204;
+	k_EMsgClientPendingGameLaunch = 12300;
+	k_EMsgClientPendingGameLaunchResponse = 12301;
 }
 
 enum EClientPersonaStateFlag {

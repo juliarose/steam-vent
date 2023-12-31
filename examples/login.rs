@@ -16,6 +16,7 @@ async fn main() -> Result<(), ConnectionError> {
         server_list,
         &account,
         &password,
+        Default::default(),
         ConsoleAuthConfirmationHandler::default(),
     )
     .await?;

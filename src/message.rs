@@ -24,7 +24,7 @@ use tracing::{debug, trace};
 
 #[derive(Error, Debug)]
 #[error("Malformed message body for {0:?}: {1}")]
-pub struct MalformedBody(EMsg, MessageBodyError);
+pub struct MalformedBody(pub EMsg, pub MessageBodyError);
 
 impl MalformedBody {
     pub fn new(kind: EMsg, err: impl Into<MessageBodyError>) -> Self {

@@ -1,22 +1,27 @@
 use crate::auth::{begin_password_auth, AuthConfirmationHandler};
+use crate::gc::ClientToGCMessage;
 use crate::message::{
     NetMessage, ServiceMethodMessage, ServiceMethodNotification, ServiceMethodResponseMessage,
 };
+use futures_util::future::Join;
+use steam_vent_crypto::create_sha1;
 use crate::net::{NetMessageHeader, NetworkError, RawNetMessage};
 use crate::proto::enums_clientserver::EMsg;
 use crate::proto::steammessages_clientserver_login::CMsgClientHeartBeat;
 use crate::serverlist::ServerList;
 use crate::service_method::ServiceMethodRequest;
-use crate::session::{anonymous, hello, login, ConnectionError, Session};
+use crate::session::{anonymous, hello, login, ConnectionError, LoginOptions, Session};
 use crate::transport::websocket::connect;
 use dashmap::DashMap;
 use futures_util::{Sink, SinkExt};
+use steam_vent_proto::steammessages_clientserver_2::{CMsgClientUpdateMachineAuth, CMsgClientUpdateMachineAuthResponse};
+use steam_vent_proto::steammessages_clientserver_login::{CMsgClientLogon, CMsgClientNewLoginKey, CMsgClientNewLoginKeyAccepted};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use steamid_ng::SteamID;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
-use tokio::task::spawn;
+use tokio::task::{spawn, JoinHandle};
 use tokio::time::{sleep, timeout};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
@@ -28,25 +33,65 @@ pub struct Connection {
     pub(crate) session: Session,
     filter: MessageFilter,
     rest: mpsc::Receiver<Result<RawNetMessage>>,
-    write: Arc<Mutex<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin + Send>>,
+    write: Arc<Mutex<Box<dyn Sink<RawNetMessage, Error = NetworkError> + Unpin + Send + Sync>>>,
     timeout: Duration,
 }
 
 impl Connection {
-    async fn connect(server_list: ServerList) -> Result<Self, ConnectionError> {
-        let (read, write) = connect(&server_list.pick_ws()).await?;
+    async fn connect(
+        server_list: ServerList,
+    ) -> Result<Self, ConnectionError> {
+        let addr = server_list.pick_ws().await;
+        let (read, write) = connect(&addr).await?;
         let (filter, rest) = MessageFilter::new(read);
         let mut connection = Connection {
             session: Session::default(),
             filter,
             rest,
-            write: Arc::new(Mutex::new(write)),
+            write: Arc::new(Mutex::new(Box::new(write))),
             timeout: Duration::from_secs(10),
         };
         hello(&mut connection).await?;
         Ok(connection)
     }
-
+    
+    pub async fn reconnect<H: AuthConfirmationHandler>(
+        &mut self,
+        server_list: ServerList,
+        account: &str,
+        password: &str,
+        mut confirmation_handler: H,
+    ) -> Result<(), ConnectionError> {
+        let addr = server_list.pick_ws().await;
+        let (read, write) = connect(&addr).await?;
+        let (filter, rest) = MessageFilter::new(read);
+        
+        *(self.write.lock().await) = Box::new(write);
+        self.filter = filter;
+        self.rest = rest;
+        
+        let begin = begin_password_auth(self, account, password).await?;
+        let steam_id = SteamID::from(begin.steam_id());
+        let confirmation_action = confirmation_handler
+            .handle_confirmation(begin.allowed_confirmations())
+            .await;
+        let pending = begin
+            .submit_confirmation(self, confirmation_action)
+            .await?;
+        let tokens = pending.wait_for_tokens(self).await?;
+        self.session = login(
+            self,
+            account,
+            steam_id,
+            // yes we send the refresh token as access token, yes it makes no sense, yes this is actually required
+            tokens.refresh_token.as_ref(),
+        )
+        .await?;
+        // heartbeat is already setup
+        
+        Ok(())
+    }
+    
     pub async fn anonymous(server_list: ServerList) -> Result<Self, ConnectionError> {
         let mut connection = Self::connect(server_list).await?;
         connection.session = anonymous(&mut connection).await?;
@@ -54,17 +99,17 @@ impl Connection {
 
         Ok(connection)
     }
-
+    
     pub async fn login<H: AuthConfirmationHandler>(
         server_list: ServerList,
         account: &str,
         password: &str,
+        options: LoginOptions,
         mut confirmation_handler: H,
     ) -> Result<Self, ConnectionError> {
         let mut connection = Self::connect(server_list).await?;
         let begin = begin_password_auth(&mut connection, account, password).await?;
         let steam_id = SteamID::from(begin.steam_id());
-
         let confirmation_action = confirmation_handler
             .handle_confirmation(begin.allowed_confirmations())
             .await;
@@ -84,8 +129,76 @@ impl Connection {
 
         Ok(connection)
     }
-
-    fn setup_heartbeat(&self) {
+    
+    fn setup_sentry(&self) -> JoinHandle<()> {
+        let write = self.write.clone();
+        let mut header = NetMessageHeader {
+            session_id: self.session.session_id,
+            source_job_id: u64::MAX,
+            target_job_id: u64::MAX,
+            steam_id: self.steam_id(),
+            ..NetMessageHeader::default()
+        };
+        let sentry_message = self.filter.one_kind(EMsg::k_EMsgClientUpdateMachineAuth);
+        
+        spawn(async move {
+            if let Ok(msg) = sentry_message.await {
+                let source_job_id: u64 = msg.header.source_job_id;
+                
+                if let Ok(message) =  msg.into_message::<CMsgClientUpdateMachineAuth>() {
+                    let mut req = CMsgClientUpdateMachineAuthResponse::new();
+                    let bytes = message.bytes();
+                    let hash = create_sha1(bytes);
+                    
+                    req.set_sha_file(hash);
+                    header.target_job_id = source_job_id;
+                    
+                    if let Ok(msg) = RawNetMessage::from_message(header, req) {
+                        let mut writer = write.lock().await;
+                        
+                        if let Err(e) = writer.send(msg).await {
+                            error!(error = ?e, "Failed to send heartbeat message");
+                        }
+                    }
+                }
+            }
+        })
+    }
+    
+    fn setup_login_key(&self) -> JoinHandle<()> {
+        let write = self.write.clone();
+        let header = NetMessageHeader {
+            session_id: self.session.session_id,
+            source_job_id: u64::MAX,
+            target_job_id: u64::MAX,
+            steam_id: self.steam_id(),
+            ..NetMessageHeader::default()
+        };
+        let login_key_message = self.filter.one_kind(EMsg::k_EMsgClientNewLoginKey);
+        
+        spawn(async move {
+            if let Ok(msg) = login_key_message.await {
+                if let Ok(message) =  msg.into_message::<CMsgClientNewLoginKey>() {
+                    let mut req = CMsgClientNewLoginKeyAccepted::new();
+                    let login_key = message.login_key();
+                    let unique_id = message.unique_id();
+                    let mut req = CMsgClientNewLoginKeyAccepted::new();
+                    
+                    req.set_unique_id(unique_id);
+                    
+                    if let Ok(msg) = RawNetMessage::from_message(header, req) {
+                        let mut writer = write.lock().await;
+                        
+                        if let Err(e) = writer.send(msg).await {
+                            error!(error = ?e, "Failed to send heartbeat message");
+                        }
+                    }
+                }
+            }
+        })
+    }
+    
+    fn setup_heartbeat(&self) -> JoinHandle<()> {
         let write = self.write.clone();
         let interval = self.session.heartbeat_interval;
         let header = NetMessageHeader {
@@ -95,6 +208,7 @@ impl Connection {
             steam_id: self.steam_id(),
             ..NetMessageHeader::default()
         };
+        
         spawn(async move {
             loop {
                 sleep(interval).await;
@@ -110,7 +224,7 @@ impl Connection {
                     }
                 }
             }
-        });
+        })
     }
 
     pub fn steam_id(&self) -> SteamID {
@@ -125,6 +239,21 @@ impl Connection {
         let msg = RawNetMessage::from_message(header, msg)?;
         self.write.lock().await.send(msg).await?;
         Ok(())
+    }
+    
+    pub async fn send_gc(
+        &mut self,
+        msg: ClientToGCMessage,
+    ) -> Result<u64> {
+        let mut header = self.session.header();
+        
+        header.routing_appid = Some(msg.0.appid());
+        
+        let id = header.source_job_id;
+        let msg = RawNetMessage::from_message(header, msg)?;
+        
+        self.write.lock().await.send(msg).await?;
+        Ok(id)
     }
 
     pub fn set_timeout(&mut self, timeout: Duration) {

@@ -8,7 +8,7 @@ use hmac::{Hmac, Mac};
 use once_cell::sync::Lazy;
 use rand::{random, Rng};
 use rsa::{BigUint, Oaep, Pkcs1v15Encrypt, Pss, RsaPublicKey};
-use sha1::Sha1;
+use sha1::{Sha1, Digest};
 use std::convert::TryInto;
 use thiserror::Error;
 
@@ -20,6 +20,13 @@ pub enum CryptError {
     MalformedMessage,
     #[error("Invalid HMAC")]
     InvalidHmac,
+}
+
+pub fn create_sha1(input: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha1::default();
+    
+    hasher.update(input);
+    hasher.finalize().to_vec()
 }
 
 pub type Result<T> = std::result::Result<T, CryptError>;

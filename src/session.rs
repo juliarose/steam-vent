@@ -7,6 +7,7 @@ use crate::proto::steammessages_clientserver_login::{
 };
 use crate::serverlist::ServerDiscoveryError;
 use protobuf::MessageField;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use steam_vent_crypto::CryptError;
@@ -58,6 +59,11 @@ impl From<EResult> for LoginError {
             value => LoginError::Unknown(value),
         }
     }
+}
+
+#[derive(Debug, Default)]
+pub struct LoginOptions {
+    pub config_path: Option<PathBuf>,
 }
 
 #[derive(Default, Debug)]
@@ -149,7 +155,7 @@ pub async fn login(
         client_package_version: Some(1771),
         ..CMsgClientLogon::default()
     };
-
+    
     send_logon(connection, logon, steam_id).await
 }
 
@@ -165,11 +171,12 @@ async fn send_logon(
         steam_id,
         ..NetMessageHeader::default()
     };
-
+    
     let fut = connection.one::<CMsgClientLogonResponse>();
     connection.send(header, logon).await?;
 
     let (header, response) = fut.await?;
+    println!("{}", response.cell_id());
     EResult::from_result(response.eresult()).map_err(LoginError::from)?;
     debug!(steam_id = u64::from(steam_id), "session started");
     Ok(Session {
@@ -194,7 +201,7 @@ pub async fn hello(conn: &mut Connection) -> Result<(), NetworkError> {
         steam_id: SteamID::from(0),
         ..NetMessageHeader::default()
     };
-
+    
     conn.send(header, req).await?;
     Ok(())
 }

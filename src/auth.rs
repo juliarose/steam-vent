@@ -145,6 +145,7 @@ impl StartedAuth {
     }
 }
 
+#[derive(Debug)]
 pub struct ConfirmationMethod(CAuthentication_AllowedConfirmation);
 
 impl ConfirmationMethod {
@@ -282,7 +283,7 @@ impl AuthConfirmationHandler for ConsoleAuthConfirmationHandler {
 }
 
 #[derive(Debug)]
-pub struct SteamGuardToken(String);
+pub struct SteamGuardToken(pub String);
 
 pub(crate) struct PendingAuth {
     client_id: u64,
